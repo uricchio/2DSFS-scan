@@ -9,12 +9,14 @@ import os
 import glob
 import pandas as pd
 import matplotlib.pyplot as plt
+import pickle
+import bz2
 
 
 ''' parsing simulation vcfs from multiple runs'''
 
 # 1. get search strings for each generation
-main_dir = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/2DSFS_scan/simulations/test"
+main_dir = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/simulations/test"
 
 def get_gens(main_dir):
     search_strings = set()
@@ -51,7 +53,6 @@ def concatenate_vcf_files(main_dir):
             
         print(f"VCF files containing '{pattern}' have been concatenated into {output_file}")
 
-
 def concatenate_fst_files(path):
     
     fst_files = glob.glob(f"{path}/*/*.txt")
@@ -76,15 +77,15 @@ def concatenate_fst_files(path):
                         out.write(line)
     
 
-path = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/2DSFS_scan/simulations/results/vcfs"
+path = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/simulations/results/vcfs"
 
 concatenate_fst_files(path)
 
 
 
 '''simulations data'''
-vcf_filename = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/2DSFS_scan/simulations/results/stabSel_sim.vcf.gz"
-popinfo_filename = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/2DSFS_scan/simulations/results/popmap_sims.txt"
+vcf_filename = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/simulations/results/stabSel_sim.vcf.gz"
+popinfo_filename = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/simulations/results/popmap_sims.txt"
 
 
 "check the software license and see if it can be reused for other purposes"
@@ -206,85 +207,6 @@ def make_data_dict_vcf(vcf_filename, popinfo_filename, filter=True):
     vcf_file.close()
     
     return data_dict
-
-
-def calculate_2d_sfs(data_dict, pop1, pop2, start_position, end_position): # old version
-    """
-    calculate the two-dimensional site frequency spectrum (SFS) 
-    for two populations from a given SNP data dictionary.
-
-    parameters:
-    - data_dict: dictionary containing SNP information. Each entry includes allele counts for populations.
-    - pop1: name of population 1 in the dict
-    - pop2: name of population 2 in the dict
-    
-    returns:
-    - sfs_dict: dictionary where keys are tuples (p1_freq, p2_freq) and values are counts of SNPs with those frequencies.
-    
-    add a 1 to the bins where I have zero counts
-    """
-    
-    # count number of genomes (diploid individuals)
-    num_genomes_p1 = 0
-    num_genomes_p2 = 0
-
-    for snp_id, snp_info in data_dict.items():
-        if pop1 in snp_info['calls']:
-            num_genomes_p1 = sum(snp_info['calls'][pop1])
-        if pop2 in snp_info['calls']:
-            num_genomes_p2 = sum(snp_info['calls'][pop2])
-        break
-    
-    # intialize 2d-sfs with keys for all combinations of frequencies    
-    sfs_dict = {}
-    
-    for i in range(num_genomes_p1 + 1):
-        for j in range(num_genomes_p2 + 1):
-            sfs_dict[(i,j)] = 0 
-    
-    # initialize variable for total number of sites
-    total_sites = 0
-
-    # loop through all snps in the data_dict
-    for snp_id, snp_info in data_dict.items():
-        
-        chr_id, pos = snp_id.split('-')
-        pos = int(pos)
-        
-        if start_position is not None and pos < start_position:
-            continue
-        if end_position is not None and pos > end_position:
-            continue
-        
-        # get allele counts for pop1 and pop2
-        pop1_calls = snp_info['calls'].get(pop1, (0, 0))  # (ref_calls, alt_calls)
-        pop2_calls = snp_info['calls'].get(pop2, (0, 0))
-
-        alt_count_pop1 = pop1_calls[1]
-        alt_count_pop2 = pop2_calls[1]
-
-        # skip snps where both pops are missing or have no alternate alleles
-        if alt_count_pop1 == 0 and alt_count_pop2 == 0:
-            continue
-
-        # increase the corresponding bin in the sfs
-        sfs_dict.setdefault((alt_count_pop1, alt_count_pop2), 0)
-        sfs_dict[(alt_count_pop1, alt_count_pop2)] += 1
-        
-        # increase total number of sites
-        total_sites += 1
-        
-    # add pseudo-counts to all bins (1/total_sites)
-    if total_sites > 0:
-        pseudo_count = 1 / total_sites
-    else:
-        0
-    
-    for key in sfs_dict.keys():
-        sfs_dict[key] += pseudo_count
-
-    return sfs_dict
-
 
 def calculate_2d_sfs(data_dict, pop1, pop2, pop1_size, pop2_size, start_position, end_position, variant_type=None):
     """
@@ -451,6 +373,15 @@ def calculate_p(foreground_sfs, background_sfs):
             
     return p_values_sum
 
+def count_snps(window_data, variant_type):
+    snp_count = 0
+    for snp_data in window_data.values():
+        if variant_type is None:
+            snp_count += 1
+        elif snp_data.get("annotation") == variant_type:
+            snp_count += 1
+    return snp_count
+
 def calculate_p_window(data_dict, sfs_normalized, window_size, pop1, pop2, pop1_size, pop2_size, start_position, end_position, variant_type):
     
     '''
@@ -487,8 +418,12 @@ def calculate_p_window(data_dict, sfs_normalized, window_size, pop1, pop2, pop1_
                 # calculate p-values for the last window of the previous chromosome
                 sfs_dict = calculate_2d_sfs(window_data, pop1, pop2, pop1_size, pop2_size, start_position, end_position, variant_type)
                 p_values_dict = calculate_p(sfs_dict, sfs_normalized)
+                snp_count = count_snps(window_data, variant_type)
                 window_range = f"{current_chromosome} {current_window_start}-{current_window_start + window_size - 1}"
-                window_p_values[window_range] = p_values_dict
+                window_p_values[window_range] = {
+                    "p_values": p_values_dict,
+                    "snp_count": snp_count
+                }
 
             # start new chromosome
             current_chromosome = chrom
@@ -503,8 +438,12 @@ def calculate_p_window(data_dict, sfs_normalized, window_size, pop1, pop2, pop1_
             if window_data:
                 sfs_dict = calculate_2d_sfs(window_data, pop1, pop2, pop1_size, pop2_size, start_position, end_position, variant_type)
                 p_values_dict = calculate_p(sfs_dict, sfs_normalized)
+                snp_count = count_snps(window_data, variant_type)
                 window_range = f"{current_chromosome} {current_window_start}-{current_window_start + window_size - 1}"
-                window_p_values[window_range] = p_values_dict
+                window_p_values[window_range] = {
+                    "p_values": p_values_dict,
+                    "snp_count": snp_count
+                }
 
             # move to the next window, aligned to the window size
             current_window_start += window_size * ((pos - current_window_start) // window_size)
@@ -514,21 +453,25 @@ def calculate_p_window(data_dict, sfs_normalized, window_size, pop1, pop2, pop1_
     if window_data:
         sfs_dict = calculate_2d_sfs(window_data, pop1, pop2, pop1_size, pop2_size, start_position, end_position, variant_type)
         p_values_dict = calculate_p(sfs_dict, sfs_normalized)
+        snp_count = count_snps(window_data, variant_type)
         window_range = f"{current_chromosome} {current_window_start}-{current_window_start + window_size - 1}"
-        window_p_values[window_range] = p_values_dict
+        window_p_values[window_range] = {
+                    "p_values": p_values_dict,
+                    "snp_count": snp_count
+                }
         
     return window_p_values
 
 
 ''' trying pipeline on ECB data '''
 
-chrZ_vcf = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/2DSFS_scan/data_summer2024/ECBchrZ_highestFSTwindow.vcf.gz"
-chr1_vcf = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/2DSFS_scan/data_summer2024/ECBchr1.vcf.gz"
-chr2_vcf = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/2DSFS_scan/data_summer2024/ECBchr2.vcf.gz"
-ECB_wg_vcf = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/2DSFS_scan/data_summer2024/ECBAnnotated.vcf.gz"
+chrZ_vcf = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/data_summer2024/ECBchrZ_highestFSTwindow.vcf.gz"
+chr1_vcf = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/data_summer2024/ECBchr1.vcf.gz"
+chr2_vcf = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/data_summer2024/ECBchr2.vcf.gz"
+ECB_wg_vcf = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/data_summer2024/ECBAnnotated.vcf.gz"
 
 
-popmap = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/2DSFS_scan/data_summer2024/popmap.txt"
+popmap = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/data_summer2024/popmap.txt"
 
 # chr 1 - get background
 chr1_data_dict = make_data_dict_vcf(chr1_vcf, popmap)
@@ -543,26 +486,33 @@ chr1_norm_sfs_nonsyn = normalize_2d_sfs(chr1_sfs_nonsyn)
 
 # chr Z
 chrZ_data_dict = make_data_dict_vcf(chrZ_vcf, popmap)
-chrZ_sfs = calculate_2d_sfs(chrZ_data_dict, 'uv', 'bv', start_position=None, end_position=None, variant_type=None)
-chrZ_syn_sfs = calculate_2d_sfs(chrZ_data_dict, 'uv', 'bv', start_position=None, end_position=None, variant_type='synonymous_variant')
+chrZ_sfs = calculate_2d_sfs(chrZ_data_dict, 'uv', 'bv', 18, 14, start_position=None, end_position=None, variant_type=None)
+chrZ_syn_sfs = calculate_2d_sfs(chrZ_data_dict, 'uv', 'bv', 18, 14, start_position=None, end_position=None, variant_type='synonymous_variant')
 
-
-likelihood_chr1_chrZ = calculate_p_window(chrZ_data_dict, chr1_norm_sfs, 500000, 'uv', 'bv', 18, 14, start_position=None, end_position=None)
-likelihood_chr1_chrZ_syn = calculate_p_window(chrZ_data_dict, chr1_norm_sfs_syn, 500000, 'uv', 'bv', 18, 14, start_position=None, end_position=None, variant_type='synonymous_variant')
+likelihood_chr1_chrZ = calculate_p_window(chrZ_data_dict, chr1_norm_sfs, 500000, 'uv', 'bv', 18, 14, start_position=None, end_position=None, variant_type=None)
+likelihood_chr1_chrZ_syn = calculate_p_window(chrZ_data_dict, chr1_norm_sfs_syn, 100000, 'uv', 'bv', 18, 14, start_position=None, end_position=None, variant_type='synonymous_variant')
 likelihood_chr1_chrZ_nonsyn = calculate_p_window(chrZ_data_dict, chr1_norm_sfs_nonsyn, 500000, 'uv', 'bv', 18, 14, start_position=None, end_position=None, variant_type='missense_variant')
 
 
-likelihood_chr1 = calculate_p_window(chr1_data_dict, chr1_norm_sfs, 500000, 'uv', 'bv', start_position=None, end_position=None)
-likelihood_chr1_syn = calculate_p_window(chr1_data_dict, chr1_norm_sfs_syn, 500000, 'uv', 'bv', 18, 14, start_position=None, end_position=None, variant_type='synonymous_variant')
+likelihood_chr1 = calculate_p_window(chr1_data_dict, chr1_norm_sfs, 100000, 'uv', 'bv', start_position=None, end_position=None)
+likelihood_chr1_syn = calculate_p_window(chr1_data_dict, chr1_norm_sfs_syn, 100000, 'uv', 'bv', 18, 14, start_position=None, end_position=None, variant_type='synonymous_variant')
 
 
 # whole genome
 ECB_wg_dict = make_data_dict_vcf(ECB_wg_vcf, popmap)
 
+# store ECB_wg_dict into local machine as a compressed file so I dont have to load it everytime i need it 
+with bz2.BZ2File('genome_data.pkl.bz2', 'wb') as file:
+    pickle.dump(ECB_wg_dict, file)
+    
+# load compressed data
+with bz2.BZ2File('genome_data.pkl.bz2', 'rb') as file:
+    ECB_wg_dict = pickle.load(file)
+
 
 # get chromosome ids
 
-chromosome_ids = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/2DSFS_scan/data_summer2024/scripts/chromosomes.txt"
+chromosome_ids = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/data_summer2024/scripts/chromosomes.txt"
 
 chr_ids_file = open(chromosome_ids, "r")
 chr_ids = {}
@@ -574,96 +524,61 @@ for line in chr_ids_file:
 chr_ids_file.close()
 
 
-col_names = ['chromosome', 'region', 'window_id', 'window_start', 'window_end', 'likelihood']
 
-''' all variants '''
+def write_output(output_file, background_sfs, window_size, start_position, end_position, variant_type):
+    
+    col_names = ['chromosome', 'region', 'window_id', 'window_start', 'window_end', 'snp_count', 'likelihood']
 
-with open('likelihoods_ECBwg_all.csv', 'a') as csvfile:
-    writer = csv.DictWriter(csvfile, fieldnames=col_names)
-    writer.writeheader()
+    with open(output_file, 'a') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=col_names)
+        writer.writeheader()
 
-    likelihoods_wg = calculate_p_window(ECB_wg_dict, chr1_norm_sfs, 500000, 'uv', 'bv', 18, 14, start_position=None, end_position=None, variant_type=None)
+        likelihoods_wg = calculate_p_window(ECB_wg_dict, background_sfs, window_size, 'uv', 'bv', 18, 14, start_position=start_position, end_position=end_position, variant_type=variant_type)
 
-    for key, value in likelihoods_wg.items():
-        chromosome = key.split(' ')[0]
-        region = 'foreground'  # Default to foreground
+        for key, value in likelihoods_wg.items():
+            chromosome = key.split(' ')[0]
 
-        if chromosome == 'NC_087088.1':
-            region = 'background'
+            chromosome_num = chr_ids.get(chromosome, chromosome)  # default to the original if not found
+            
+            region = 'foreground'
 
-        window_start, window_end = key.split(' ')[1].split('-')
+            if chromosome == 'NC_087088.1':
+                region = 'background'
 
-        writer.writerow({
-            'chromosome': chromosome,
-            'region': region,
-            'window_id': key,
-            'window_start': window_start,
-            'window_end': window_end,
-            'likelihood': value
-        })
+            window_start, window_end = key.split(' ')[1].split('-')
+            
+            snp_count = value['snp_count']  
+            likelihood = value['p_values']  
+
+
+            writer.writerow({
+                'chromosome': chromosome_num,
+                'region': region,
+                'window_id': key,
+                'window_start': window_start,
+                'window_end': window_end,
+                'snp_count': snp_count,
+                'likelihood': likelihood
+            })
+
+''' all variants '''            
+write_output('all_500kb.csv', chr1_norm_sfs, 500000, start_position=None, end_position=None, variant_type=None)
 
 ''' synonymous variants '''
-
-with open('likelihoods_ECBwg_syn.csv', 'a') as csvfile:
-    writer = csv.DictWriter(csvfile, fieldnames=col_names)
-    writer.writeheader()
-
-    likelihoods_wg = calculate_p_window(ECB_wg_dict, chr1_norm_sfs_syn, 500000, 'uv', 'bv', 18, 14, start_position=None, end_position=None, variant_type='synonymous_variant')
-
-    for key, value in likelihoods_wg.items():
-        chromosome = key.split(' ')[0]
-        region = 'foreground'  # Default to foreground
-
-        if chromosome == 'NC_087088.1':
-            region = 'background'
-
-        window_start, window_end = key.split(' ')[1].split('-')
-
-        writer.writerow({
-            'chromosome': chromosome,
-            'region': region,
-            'window_id': key,
-            'window_start': window_start,
-            'window_end': window_end,
-            'likelihood': value
-        })
+write_output('syn_500kb.csv', chr1_norm_sfs_syn, 500000, start_position=None, end_position=None, variant_type='synonymous_variant')
     
 ''' nonsynonymous variants '''
-
-with open('likelihoods_ECBwg_nonsyn.csv', 'a') as csvfile:
-    writer = csv.DictWriter(csvfile, fieldnames=col_names)
-    writer.writeheader()
-
-    likelihoods_wg = calculate_p_window(ECB_wg_dict, chr1_norm_sfs_nonsyn, 500000, 'uv', 'bv', 18, 14, start_position=None, end_position=None, variant_type='missense_variant')
-
-    for key, value in likelihoods_wg.items():
-        chromosome = key.split(' ')[0]
-        region = 'foreground'  # Default to foreground
-
-        if chromosome == 'NC_087088.1':
-            region = 'background'
-
-        window_start, window_end = key.split(' ')[1].split('-')
-
-        writer.writerow({
-            'chromosome': chromosome,
-            'region': region,
-            'window_id': key,
-            'window_start': window_start,
-            'window_end': window_end,
-            'likelihood': value
-        })
+write_output('nonsyn_500kb.csv', chr1_norm_sfs_nonsyn, 500000, start_position=None, end_position=None, variant_type='missense_variant')
     
-# plot
 
-''' end of trying pipeline on ECB data '''
+''' end of applying pipeline on ECB data '''
 
 ##########
 
-''' trying pipeline on simulations data '''
+''' applying pipeline on simulations data '''
 
-vcf_filename = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/2DSFS_scan/simulations/results/vcfs/concatenated_vcfs/gen.5000.concatenated.vcf.gz"
-popinfo_filename = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/2DSFS_scan/simulations/results/popmap_sims.txt"
+vcf_filename = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/simulations/results/vcfs/concatenated_vcfs/gen.5000.concatenated.vcf.gz"
+popinfo_filename = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/simulations/results/popmap_sims.txt"
 
 data_dict = make_data_dict_vcf(vcf_filename, popinfo_filename, snp_type=None)
 background_sfs = calculate_2d_sfs(data_dict, 'p1', 'p2', start_position=0, end_position=500000)
@@ -723,7 +638,7 @@ def likelihood_scan(main_dir, output):
     # concatenated_vcfs = []
     
     # define pop map file
-    popinfo_filename = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/2DSFS_scan/simulations/results/popmap_sims_copy.txt"
+    popinfo_filename = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/simulations/results/popmap_sims_copy.txt"
 
     # get generation IDs
     generations = get_gens(main_dir)
@@ -775,7 +690,7 @@ def likelihood_scan(main_dir, output):
                             'likelihood': value
                         })
 
-main_dir = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/2DSFS_scan/simulations/results/vcfs"
+main_dir = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/simulations/results/vcfs"
 
 likelihood_scan(main_dir, 'likelihoods_500kb.csv')
 
@@ -783,7 +698,7 @@ likelihood_scan(main_dir, 'likelihoods_500kb.csv')
 
 # likelihood scan on concatenated files
 
-popinfo_filename = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/2DSFS_scan/simulations/results/popmap_sims_copy.txt"
+popinfo_filename = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/simulations/results/popmap_sims_copy.txt"
 
 # get generation IDs
 generations = get_gens(main_dir)
@@ -795,7 +710,7 @@ with open('likelihoods_concatenated.csv', 'a') as csvfile:
     writer.writeheader()
     
     for generation in generations:
-        concatenated_vcfs = glob.glob(f"/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/2DSFS_scan/simulations/results/vcfs/concatenated_vcfs/gen.{generation}.concatenated.vcf.gz")
+        concatenated_vcfs = glob.glob(f"/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/simulations/results/vcfs/concatenated_vcfs/gen.{generation}.concatenated.vcf.gz")
         print(concatenated_vcfs)
         
         for vcf in concatenated_vcfs:
@@ -860,13 +775,13 @@ def normalize_dadi_sfs(sfs, norm_sfs):
 # get the -log of each bin to get the fractional numbers and it would plot 
 
 # chr1
-sfs = '/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/2DSFS_scan/data_summer2024/chr1.downsampled.folded.fs'
-norm_sfs = '/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/2DSFS_scan/data_summer2024/chr1.downsampled.folded.normalized.fs'
+sfs = '/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/data_summer2024/chr1.downsampled.folded.fs'
+norm_sfs = '/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/data_summer2024/chr1.downsampled.folded.normalized.fs'
 normalize_dadi_sfs(sfs, norm_sfs)
 
 # chrZ
-sfs = '/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/2DSFS_scan/data_summer2024/chrZ_highestFSTwindow.downsampled.folded.fs'
-norm_sfs = '/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/2DSFS_scan/data_summer2024/chrZ_highestFSTwindow.downsampled.folded.normalized.fs'
+sfs = '/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/data_summer2024/chrZ_highestFSTwindow.downsampled.folded.fs'
+norm_sfs = '/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/data_summer2024/chrZ_highestFSTwindow.downsampled.folded.normalized.fs'
 normalize_dadi_sfs(sfs, norm_sfs)
 
 
@@ -903,6 +818,6 @@ def dadi_1D_sfs(sfs, output):
         for freq, count, norm_count in zip(frequencies, allele_counts, normalized_counts):
             writer.writerow({'freq': freq, 'count': count, 'normalized_count': norm_count})
 
-sfs = '/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/2DSFS_scan/data_summer2024/chr1.bv.downsampled.folded.fs'
-output = '/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/2DSFS_scan/data_summer2024/chr1.bv.downsampled.folded.fs.csv'
+sfs = '/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/data_summer2024/chr1.bv.downsampled.folded.fs'
+output = '/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/data_summer2024/chr1.bv.downsampled.folded.fs.csv'
 dadi_1D_sfs(sfs, output)
