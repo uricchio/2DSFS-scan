@@ -720,7 +720,7 @@ with open('likelihoods_concatenated.csv', 'a') as csvfile:
             p_values_sims = calculate_p_window(data_dict, normalized_background_sfs, 100000, 'p1', 'p2', start_position=None, end_position=None)
     
             for key, value in p_values_sims.items():
-                # Determine region based on window coordinates
+                
                 window_start, window_end = key.split('_')[1].split('-')
                 region = 'background' if int(window_end) < 1000000 else 'foreground'
     

@@ -17,14 +17,14 @@ import matplotlib.colors as mcolors
 
  
 class LikelihoodInference_jointSFS:
-    def __init__(self, vcf_filename, popinfo_filename, data_dict, pop1, pop2, pop1_size, pop2_size, ):
-        self.vcf_filename = vcf_filename 
-        self.popinfo_filename = popinfo_filename
-        self.data_dict = data_dict
-        self.pop1 = pop1
-        self.pop2 = pop2
-        self.pop1_size = pop1_size
-        self.pop2_size = pop2_size
+    # def __init__(self, vcf_filename, popinfo_filename, data_dict, pop1, pop2, pop1_size, pop2_size, ):
+    #     self.vcf_filename = vcf_filename 
+    #     self.popinfo_filename = popinfo_filename
+    #     self.data_dict = data_dict
+    #     self.pop1 = pop1
+    #     self.pop2 = pop2
+    #     self.pop1_size = pop1_size
+    #     self.pop2_size = pop2_size
         
     
     def make_data_dict_vcf(self, vcf_filename, popinfo_filename):
@@ -454,7 +454,16 @@ class LikelihoodInference_jointSFS:
         folded_sfs_dict = {}
     
         for (freq_pop1, freq_pop2), count in sfs_dict.items():
+            maf_pop1 = min(freq_pop1, num_chromosomes_pop1 - freq_pop1)
+            maf_pop2 = min(freq_pop2, num_chromosomes_pop2 - freq_pop2)
             
+            key = (maf_pop1, maf_pop2)
+            
+            # initialize if key does not exist
+            if key not in folded_sfs_dict:
+                folded_sfs_dict[key] = 0
+                
+            folded_sfs_dict[key] += count
         
         return folded_sfs_dict
             
@@ -489,7 +498,7 @@ def plot_2d_sfs(sfs_dict, pop1_size, pop2_size, cmap="viridis", log_scale=True):
     # Create the plot
     fig, ax = plt.subplots(figsize=(6, 5))
     norm = mcolors.LogNorm(vmin=1) if log_scale else None  # Avoid log(0) issues
-    c = ax.pcolormesh(sfs_matrix, cmap=cmap, norm=norm)
+    c = ax.pcolormesh(sfs_matrix, cmap=cmap + "_r", norm=norm)
 
     # Add diagonal reference line (folding boundary)
     ax.plot([0, max_freq], [0, max_freq], color='black', linewidth=0.5)
@@ -502,7 +511,6 @@ def plot_2d_sfs(sfs_dict, pop1_size, pop2_size, cmap="viridis", log_scale=True):
     plt.colorbar(c, label="Allele count")
 
     plt.show()
-
     
     
 # test files
@@ -520,5 +528,6 @@ chr1_sfs_norm = inferencePipeline.normalize_2d_sfs(chr1_sfs)
 
 chr1_1d_sfs = inferencePipeline.calculate_1d_sfs(chr1_data_dict,'uv',18,start_position=None,end_position=None,variant_type=None)
 chr1_1dsfs_folded = inferencePipeline.fold_1d_sfs(chr1_1d_sfs)
-
+chr1_2dsfs_folded = inferencePipeline.fold_2d_sfs(chr1_sfs, 18, 14)
+plot_2d_sfs(chr1_sfs, 18, 14)
         
