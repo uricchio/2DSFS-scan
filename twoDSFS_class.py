@@ -454,7 +454,7 @@ class LikelihoodInference_jointSFS:
         folded_sfs_dict = {}
     
         for (freq_pop1, freq_pop2), count in sfs_dict.items():
-            maf_pop1 = min(freq_pop1, num_chromosomes_pop1 - freq_pop1)
+            maf_pop1 = min(freq_pop1, num_chromosomes_pop1 - freq_pop1) # freq of alt, freq of ref (# chr - freq of alt)
             maf_pop2 = min(freq_pop2, num_chromosomes_pop2 - freq_pop2)
             
             key = (maf_pop1, maf_pop2)
@@ -466,68 +466,25 @@ class LikelihoodInference_jointSFS:
             folded_sfs_dict[key] += count
         
         return folded_sfs_dict
-            
-
-# plots code
-def plot_2d_sfs(sfs_dict, pop1_size, pop2_size, cmap="viridis", log_scale=True):
-    """
-    Plots a folded 2D site frequency spectrum (SFS) heatmap.
-
-    Parameters:
-    - sfs_dict: dict -> Keys are (i, j) tuples representing allele frequencies, values are counts.
-    - pop1_size: int -> Number of diploid individuals in population 1.
-    - pop2_size: int -> Number of diploid individuals in population 2.
-    - cmap: str -> Matplotlib colormap.
-    - log_scale: bool -> Whether to use log normalization for color scaling.
-
-    Returns:
-    - A 2D heatmap plot of the folded SFS.
-    """
-    
-    # Maximum frequency in the folded SFS
-    max_freq = min(pop1_size, pop2_size)
-
-    # Create an empty matrix of appropriate size
-    sfs_matrix = np.zeros((max_freq + 1, max_freq + 1))
-
-    # Fill the matrix with counts
-    for (i, j), count in sfs_dict.items():
-        if i + j <= max_freq:  # Only fill the valid triangular region
-            sfs_matrix[i, j] = count
-
-    # Create the plot
-    fig, ax = plt.subplots(figsize=(6, 5))
-    norm = mcolors.LogNorm(vmin=1) if log_scale else None  # Avoid log(0) issues
-    c = ax.pcolormesh(sfs_matrix, cmap=cmap + "_r", norm=norm)
-
-    # Add diagonal reference line (folding boundary)
-    ax.plot([0, max_freq], [0, max_freq], color='black', linewidth=0.5)
-
-    # Set axis labels
-    ax.set_xlabel("Population 1 minor allele frequency")
-    ax.set_ylabel("Population 2 minor allele frequency")
-
-    # Colorbar
-    plt.colorbar(c, label="Allele count")
-
-    plt.show()
     
     
-# test files
-datadir = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/data_summer2024/"
-
+# chr1 files
 chr1_vcf = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/data_summer2024/ECBchr1.vcf.gz"
 popmap = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/data_summer2024/popmap.txt"
-
 
 inferencePipeline = LikelihoodInference_jointSFS()
 
 chr1_data_dict = inferencePipeline.make_data_dict_vcf(chr1_vcf, popmap)
-chr1_sfs = inferencePipeline.calculate_2d_sfs(chr1_data_dict, 'uv', 'bv', 18, 14, start_position=None, end_position=None, variant_type=None)
-chr1_sfs_norm = inferencePipeline.normalize_2d_sfs(chr1_sfs)
+#store chr1 SNP dictionary
+# with bz2.BZ2File('chr1.pkl.bz2', 'wb') as file:
+#     pickle.dump(chr1_data_dict, file)
 
-chr1_1d_sfs = inferencePipeline.calculate_1d_sfs(chr1_data_dict,'uv',18,start_position=None,end_position=None,variant_type=None)
-chr1_1dsfs_folded = inferencePipeline.fold_1d_sfs(chr1_1d_sfs)
-chr1_2dsfs_folded = inferencePipeline.fold_2d_sfs(chr1_sfs, 18, 14)
-plot_2d_sfs(chr1_sfs, 18, 14)
+#load chr1 SNP dictionary
+with bz2.BZ2File('chr1.pkl.bz2', 'rb') as file:
+    chr1_data_dict = pickle.load(file)
+
+
+chr1_2d_sfs = inferencePipeline.calculate_2d_sfs(chr1_data_dict, 'uv', 'bv', 18, 14, start_position=None, end_position=None, variant_type=None)
+chr1_2d_sfs_folded = inferencePipeline.fold_2d_sfs(chr1_2d_sfs, 18, 14)
+
         
