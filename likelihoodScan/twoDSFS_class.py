@@ -2,7 +2,6 @@ import gzip
 import re
 import math
 from scipy.stats import poisson
-from scipy.stats import multinomial
 import numpy as np
 from scipy.optimize import minimize
 import csv
@@ -18,21 +17,17 @@ import matplotlib.colors as mcolors
 
  
 class LikelihoodInference_jointSFS:
-    def __init__(self, vcf_filename, popinfo_filename, start_position=None, end_position=None, 
-                 pop1='uv', pop2='bv', pop1_size=18, pop2_size=14, variant_type=None, fold=True):
-        self.vcf_filename = vcf_filename 
-        self.popinfo_filename = popinfo_filename
-        self.pop1 = pop1
-        self.pop2 = pop2
-        self.pop1_size = pop1_size
-        self.pop2_size = pop2_size
-        self.start_position = start_position
-        self.end_position = end_position
-        self.variant_type = variant_type
-        self.fold = fold
+    # def __init__(self, vcf_filename, popinfo_filename, data_dict, pop1, pop2, pop1_size, pop2_size, ):
+    #     self.vcf_filename = vcf_filename 
+    #     self.popinfo_filename = popinfo_filename
+    #     self.data_dict = data_dict
+    #     self.pop1 = pop1
+    #     self.pop2 = pop2
+    #     self.pop1_size = pop1_size
+    #     self.pop2_size = pop2_size
         
     
-    def make_data_dict_vcf(self):
+    def make_data_dict_vcf(self, vcf_filename, popinfo_filename):
         """
         parse a vcf file and return a dictionary containing 'calls', 'context', 
         and 'segregating' keys for each SNP. 
@@ -51,6 +46,9 @@ class LikelihoodInference_jointSFS:
         add another argument that works as a flag to take only whatever category of function I want (missense or synonymous)
 
         """
+        
+        self.vcf_filename = vcf_filename
+        self.popinfo_filename = popinfo_filename
         
         # make population map dictionary
         popmap_file = open(self.popinfo_filename, "r")
@@ -137,9 +135,9 @@ class LikelihoodInference_jointSFS:
         return data_dict
 
 
-    def calculate_2d_sfs(self, data_dict):
+    def calculate_2d_sfs(self, data_dict, pop1, pop2, pop1_size, pop2_size, start_position, end_position, variant_type=None):
         """
-        calculate the two-dimensional sfs 
+        calculate the two-dimensional site frequency spectrum (SFS) 
         for two populations from a given SNP data dictionary.
 
         parameters:
@@ -152,10 +150,18 @@ class LikelihoodInference_jointSFS:
         
         add a 1 to the bins where I have zero counts
         """
+
         self.data_dict = data_dict
-        
-        num_genomes_p1 = self.pop1_size*2
-        num_genomes_p2 = self.pop2_size*2
+        self.pop1 = pop1
+        self.pop2 = pop2
+        self.pop1_size = pop1_size
+        self.pop2_size = pop2_size
+        self.start_position = start_position
+        self.end_position = end_position
+        self.variant_type = variant_type
+
+        num_genomes_p1 = pop1_size*2
+        num_genomes_p2 = pop2_size*2
         sfs_dict = {}
         
         for i in range(num_genomes_p1 + 1):
@@ -165,67 +171,27 @@ class LikelihoodInference_jointSFS:
         total_sites = 0
 
         # loop through all snps in the data_dict
-        for snp_id, snp_info in self.data_dict.items():
+        for snp_id, snp_info in data_dict.items():
             
             chr_id, pos = snp_id.split('-')
             pos = int(pos)
             
-            if self.start_position is not None and pos < self.start_position:
+            if start_position is not None and pos < start_position:
                 continue
-            if self.end_position is not None and pos > self.end_position:
+            if end_position is not None and pos > end_position:
                 continue
             
             # filter by variant type if specified
             snp_annotation = snp_info.get('annotation')
-            if self.variant_type is not None and snp_annotation != self.variant_type:
+            if variant_type is not None and snp_annotation != variant_type:
                 continue
             
             # get allele counts for pop1 and pop2
-            pop1_calls = snp_info['calls'].get(self.pop1, (0, 0))  # (ref_calls, alt_calls)
-            pop2_calls = snp_info['calls'].get(self.pop2, (0, 0))
+            pop1_calls = snp_info['calls'].get(pop1, (0, 0))  # (ref_calls, alt_calls)
+            pop2_calls = snp_info['calls'].get(pop2, (0, 0))
 
-            pop1_calls_list = list(pop1_calls)
-            pop2_calls_list = list(pop2_calls)
-            
-            # print(pop1_calls_list)            
-
-            # if fold:
-            #     if pos % 2 == 0:
-                    
-            #         if pop1_calls_list[1] > self.pop1_size:      
-            #             oldAlt1 = pop1_calls_list[1]      
-            #             pop1_calls_list[1] = pop1_calls_list[0]
-            #             pop1_calls_list[0] = oldAlt1
-
-            #             oldAlt2 = pop1_calls_list[1]      
-            #             pop2_calls_list[1] = pop2_calls_list[0]            
-            #             pop2_calls_list[0] = oldAlt2      
-
-            #     else:
-            #         if pop2_calls_list[1] > self.pop2_size:
-            #             oldAlt1 = pop1_calls_list[1]
-            #             pop1_calls_list[1] = pop1_calls_list[0]            
-            #             pop1_calls_list[0] = oldAlt1
-
-            #             oldAlt2 = pop1_calls_list[1]
-            #             pop2_calls_list[1] = pop2_calls_list[0]
-            #             pop2_calls_list[0] = oldAlt2      
-
-            # alt_count_pop1 = pop1_calls_list[1]
-            # alt_count_pop2 = pop2_calls_list[1]
-            
-            if self.fold:
-                if pop1_calls_list[1] + pop2_calls_list[1] > self.pop1_size + self.pop2_size: 
-                       oldAlt1 = pop1_calls_list[1]      
-                       pop1_calls_list[1] = pop1_calls_list[0]
-                       pop1_calls_list[0] = oldAlt1
-                       
-                       oldAlt2 = pop2_calls_list[1]      
-                       pop2_calls_list[1] = pop2_calls_list[0]
-                       pop2_calls_list[0] = oldAlt2
-            
-            alt_count_pop1 = pop1_calls_list[1]
-            alt_count_pop2 = pop2_calls_list[1]
+            alt_count_pop1 = pop1_calls[1]
+            alt_count_pop2 = pop2_calls[1]
 
             # skip snps where both pops are missing or have no alternate alleles
             if alt_count_pop1 == 0 and alt_count_pop2 == 0:
@@ -255,12 +221,12 @@ class LikelihoodInference_jointSFS:
         self.sfs = sfs
         
         # sum all the sites
-        counts = list(self.sfs.values())
+        counts = list(sfs.values())
         total = sum(counts[1:-1]) # exclude first and last bin 
         
         # divide each bin value by the total number of sites
         normalized_sfs = {}
-        for coords, values in self.sfs.items():
+        for coords, values in sfs.items():
             normalized_sfs[coords] = values / total
         return normalized_sfs
     
@@ -459,7 +425,8 @@ class LikelihoodInference_jointSFS:
         for key in sfs_dict.keys():
             sfs_dict[key] += pseudo_count
     
-        return sfs_dict        
+        return sfs_dict
+        
     
     def fold_1d_sfs(self, sfs_dict):
 
@@ -479,19 +446,6 @@ class LikelihoodInference_jointSFS:
                 folded_sfs_dict[minor_freq] = count
     
         return folded_sfs_dict
-    
-    def normalize_1d_sfs(self, sfs):
-        self.sfs = sfs
-        
-        counts = list(sfs.values())
-        total = sum(counts[1:-1]) # exclude first and last bin 
-        print(total)
-        normalized_sfs = {}
-        
-        for freq, values in sfs.items():
-            normalized_sfs[freq] = values / total
-            
-        return normalized_sfs
     
     def fold_2d_sfs(self, sfs_dict, pop1_size, pop2_size):
         num_chromosomes_pop1 = pop1_size * 2
@@ -513,129 +467,14 @@ class LikelihoodInference_jointSFS:
         
         return folded_sfs_dict
     
-    def calculate_likelihood_1D(self, foreground_sfs, background_sfs): 
-        
-        self.foreground_sfs = foreground_sfs
-        self.background_sfs = background_sfs
-        
-        bins = sorted(foreground_sfs.keys())
-        
-        observed_counts = []
-        for k in bins:
-            count = foreground_sfs[k]
-            observed_counts.append(int(count))
-        # print(observed_counts)
-        
-        # probs from background
-        probabilities_bg = []
-        for k in bins:
-            probability_bg = background_sfs[k]
-            probabilities_bg.append(probability_bg)
-        # print(probabilities_bg)
-        
-        # normalize probabilities so they can add up to 1
-        total_bg = sum(probabilities_bg)
-        
-        probabilities_bg_norm = []
-        for p in probabilities_bg:
-            p_norm = p/total_bg
-            probabilities_bg_norm.append(p_norm)
-        # print(probabilities_bg)
-        
-        # probs from normalized foreground
-        foreground_sfs_norm = self.normalize_2d_sfs(foreground_sfs)
-        
-        probabilities_fg = []
-        for k in bins:
-            probability_fg = foreground_sfs_norm[k]
-            probabilities_fg.append(probability_fg)
-        # print(probabilities_fg)
-        
-        # normalize probabilities so they can add up to 1
-        total_fg = sum(probabilities_fg)
-        
-        probabilities_fg_norm = []
-        for p in probabilities_fg:
-            p_norm = p/total_fg
-            probabilities_fg_norm.append(p_norm)
-        # print(probabilities_fg)
-        
-        total_sites = sum(observed_counts)
-        # print(total_sites)
-        
-        log_likelihood_bg = multinomial.logpmf(x=observed_counts, n=total_sites, p=probabilities_bg_norm)
-        log_likelihood_fg = multinomial.logpmf(x=observed_counts, n=total_sites, p=probabilities_fg_norm)
-        
-        clr = 2*(log_likelihood_fg - log_likelihood_bg)
-        
-        print("Observed Counts (x):", observed_counts)
-        print("Sum of Observed Counts (n):", total_sites)
-        print("Background Probabilities (p_bg):", probabilities_bg_norm, "Sum:", sum(probabilities_bg_norm))
-        print("Foreground Probabilities (p_fg):", probabilities_fg_norm, "Sum:", sum(probabilities_fg_norm))
-        print(log_likelihood_bg)
-        print(log_likelihood_fg)
-        print(clr)
-        
-        return clr
-
-def plot_2d_sfs(sfs_dict, sample_size, vmin=None, vmax=None, ax=None,
-                 pop_ids=('Pop1', 'Pop2'), colorbar=True, cmap='viridis_r', show=True):
-    """
-    Plots a 2D Site Frequency Spectrum (SFS) from a dictionary.
     
-    Parameters:
-    - sfs_dict: Dictionary with keys as (freq_pop1, freq_pop2) and values as allele counts.
-    - sample_size: Tuple (n1, n2) specifying the maximum frequency range for plotting.
-    - vmin, vmax: Minimum and maximum values for color scaling.
-    - ax: Matplotlib Axes object. If None, a new figure is created.
-    - pop_ids: Labels for the populations.
-    - colorbar: Whether to display a colorbar.
-    - cmap: Colormap to use for plotting.
-    - show: Whether to display the plot immediately.
-    
-    Returns:
-    - Matplotlib colorbar object if colorbar is True.
-    """
-    n1, n2 = sample_size
-    sfs_matrix = np.zeros((n1 + 1, n2 + 1))
-    
-    # Populate the SFS matrix
-    for (f1, f2), count in sfs_dict.items():
-        if f1 <= n1 and f2 <= n2:
-            sfs_matrix[f1, f2] = count
-    
-    if vmin is None:
-        vmin = np.min(sfs_matrix[sfs_matrix > 0]) if np.any(sfs_matrix > 0) else 1
-    if vmax is None:
-        vmax = np.max(sfs_matrix)
-    
-    norm = mcolors.LogNorm(vmin=vmin, vmax=vmax) if vmax / vmin > 10 else mcolors.Normalize(vmin=vmin, vmax=vmax)
-    
-    if ax is None:
-        fig, ax = plt.subplots()
-    
-    cax = ax.imshow(sfs_matrix.T, origin='lower', cmap=cmap, norm=norm, aspect='auto')
-    ax.set_xlabel(pop_ids[0])
-    ax.set_ylabel(pop_ids[1])
-    
-    if colorbar:
-        cb = plt.colorbar(cax, ax=ax)
-        return cb
-    
-    if show:
-        plt.show()
-    
-    return None
-
-''' chr1 files '''
+# chr1 files
 chr1_vcf = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/data_summer2024/ECBchr1.vcf.gz"
 popmap = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/data_summer2024/popmap.txt"
 
+inferencePipeline = LikelihoodInference_jointSFS()
 
-inferencePipeline = LikelihoodInference_jointSFS(chr1_vcf, popmap)
-
-chr1_data_dict = inferencePipeline.make_data_dict_vcf()
-
+chr1_data_dict = inferencePipeline.make_data_dict_vcf(chr1_vcf, popmap)
 #store chr1 SNP dictionary
 # with bz2.BZ2File('chr1.pkl.bz2', 'wb') as file:
 #     pickle.dump(chr1_data_dict, file)
@@ -644,65 +483,10 @@ chr1_data_dict = inferencePipeline.make_data_dict_vcf()
 with bz2.BZ2File('chr1.pkl.bz2', 'rb') as file:
     chr1_data_dict = pickle.load(file)
 
-# calculate folded sfs
-chr1_2d_sfs = inferencePipeline.calculate_2d_sfs(chr1_data_dict)
-plot_2d_sfs(chr1_2d_sfs, (36, 28), pop_ids=('uv', 'bv'))
+# calculate unfolded sfs
+chr1_2d_sfs = inferencePipeline.calculate_2d_sfs(chr1_data_dict, 'uv', 'bv', 18, 14, start_position=None, end_position=None, variant_type=None)
 
-# uv
-chr1_uv_sfs = inferencePipeline.calculate_1d_sfs(chr1_data_dict, 'uv', 18, start_position=None, end_position=None, variant_type=None)
-chr1_uv_sfs_folded = inferencePipeline.fold_1d_sfs(chr1_uv_sfs)
-chr1_uv_norm = inferencePipeline.normalize_1d_sfs(chr1_uv_sfs_folded)
+# fold sfs
+chr1_2d_sfs_folded = inferencePipeline.fold_2d_sfs(chr1_2d_sfs, 18, 14)
 
-# bv
-chr1_bv_sfs = inferencePipeline.calculate_1d_sfs(chr1_data_dict, 'bv', 14, start_position=None, end_position=None, variant_type=None)
-chr1_bv_sfs_folded = inferencePipeline.fold_1d_sfs(chr1_bv_sfs)
-chr1_bv_norm = inferencePipeline.normalize_1d_sfs(chr1_bv_sfs_folded)
-
-''' chrZ window with highest FST '''
-chrZ_vcf = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/data_summer2024/ECBchrZ_highestFSTwindow.vcf.gz"
-inference_chrZ = LikelihoodInference_jointSFS(chrZ_vcf, popmap)
-
-chrZ_dict = inference_chrZ.make_data_dict_vcf()
-
-#uv
-chrZ_uv_sfs = inference_chrZ.calculate_1d_sfs(chrZ_dict, 'uv', 18, start_position=None, end_position=None, variant_type=None)
-chrZ_uv_sfs_folded = inference_chrZ.fold_1d_sfs(chrZ_uv_sfs)
-chrZ_uv_norm = inference_chrZ.normalize_1d_sfs(chrZ_uv_sfs_folded)
-
-#bv
-chrZ_bv_sfs = inference_chrZ.calculate_1d_sfs(chrZ_dict, 'bv', 14, start_position=None, end_position=None, variant_type=None)
-chrZ_bv_sfs_folded = inference_chrZ.fold_1d_sfs(chrZ_bv_sfs)
-chrZ_bv_norm = inference_chrZ.normalize_1d_sfs(chrZ_bv_sfs_folded)
-
-chrZ_2d_sfs = inference_chrZ.calculate_2d_sfs(chrZ_dict)
-plot_2d_sfs(chrZ_2d_sfs, (36, 28), pop_ids=('uv', 'bv'))
-
-''' chr2 '''
-chr2_vcf = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/data_summer2024/ECBchr2.vcf.gz"
-inference_chr2 = LikelihoodInference_jointSFS(chr2_vcf, popmap)
-
-chr2_dict = inference_chr2.make_data_dict_vcf()
-
-#uv
-chr2_uv_sfs = inference_chr2.calculate_1d_sfs(chr2_dict, 'uv', 18, start_position=None, end_position=None, variant_type=None)
-chr2_uv_sfs_folded = inference_chr2.fold_1d_sfs(chr2_uv_sfs)
-chr2_uv_norm = inference_chr2.normalize_1d_sfs(chr2_uv_sfs_folded)
-
-#bv
-chr2_bv_sfs = inference_chr2.calculate_1d_sfs(chr2_dict, 'bv', 14, start_position=None, end_position=None, variant_type=None)
-chr2_bv_sfs_folded = inference_chr2.fold_1d_sfs(chr2_bv_sfs)
-chr2_bv_norm = inference_chr2.normalize_1d_sfs(chr2_bv_sfs_folded)
-
-chr2_2d_sfs = inference_chr2.calculate_2d_sfs(chr2_dict)
-plot_2d_sfs(chr2_2d_sfs, (36, 28), pop_ids=('uv', 'bv'))
-
-
-# calculate 1D likelihoods
-chr1_likelihoods = inferencePipeline.calculate_likelihood_1D(chr1_uv_sfs_folded, chr1_uv_norm)
-uv_chr1_chrZ_clr = inferencePipeline.calculate_likelihood_1D(chrZ_uv_sfs_folded, chr1_uv_norm)
-bv_chr1_chrZ_clr = inferencePipeline.calculate_likelihood_1D(chrZ_bv_sfs_folded, chr1_bv_norm)
-
-uv_chr1_chr2_clr = inferencePipeline.calculate_likelihood_1D(chr2_uv_sfs_folded, chr1_uv_norm)
-bv_chr1_chr2_clr = inferencePipeline.calculate_likelihood_1D(chr2_bv_sfs_folded, chr1_bv_norm)
-
-
+        
