@@ -485,7 +485,7 @@ class LikelihoodInference_jointSFS:
         
         counts = list(sfs.values())
         total = sum(counts[1:-1]) # exclude first and last bin 
-        print(total)
+        # print(total)
         normalized_sfs = {}
         
         for freq, values in sfs.items():
@@ -543,7 +543,7 @@ class LikelihoodInference_jointSFS:
         # print(probabilities_bg)
         
         # probs from normalized foreground
-        foreground_sfs_norm = self.normalize_2d_sfs(foreground_sfs)
+        foreground_sfs_norm = self.normalize_1d_sfs(foreground_sfs)
         
         probabilities_fg = []
         for k in bins:
@@ -560,7 +560,7 @@ class LikelihoodInference_jointSFS:
             probabilities_fg_norm.append(p_norm)
         # print(probabilities_fg)
         
-        total_sites = sum(observed_counts)
+        total_sites = sum(observed_counts) # should this exclude the counts in the first and last bin? (sum(observed_counts[1:-1]))
         # print(total_sites)
         
         log_likelihood_bg = multinomial.logpmf(x=observed_counts, n=total_sites, p=probabilities_bg_norm)
@@ -568,15 +568,160 @@ class LikelihoodInference_jointSFS:
         
         clr = 2*(log_likelihood_fg - log_likelihood_bg)
         
-        print("Observed Counts (x):", observed_counts)
-        print("Sum of Observed Counts (n):", total_sites)
-        print("Background Probabilities (p_bg):", probabilities_bg_norm, "Sum:", sum(probabilities_bg_norm))
-        print("Foreground Probabilities (p_fg):", probabilities_fg_norm, "Sum:", sum(probabilities_fg_norm))
-        print(log_likelihood_bg)
-        print(log_likelihood_fg)
-        print(clr)
+        # print("Observed Counts (x):", observed_counts)
+        # print("Sum of Observed Counts (n):", total_sites)
+        # print("Background Probabilities (p_bg):", probabilities_bg_norm, "Sum:", sum(probabilities_bg_norm))
+        # print("Foreground Probabilities (p_fg):", probabilities_fg_norm, "Sum:", sum(probabilities_fg_norm))
+        # print(log_likelihood_bg)
+        # print(log_likelihood_fg)
+        # print(clr)
         
         return clr
+    
+    def calculate_likelihood_2D(self, foreground_sfs_2D, background_sfs_2D):
+        
+        self.foreground_sfs_2D = foreground_sfs_2D
+        self.background_sfs_2D = background_sfs_2D
+        
+        bins = sorted(foreground_sfs_2D.keys())
+        # print(bins)
+        
+        observed_counts = []
+        for k in bins:
+            count = foreground_sfs_2D[k]
+            observed_counts.append(int(count))
+        # print(observed_counts)
+        
+        # probs from background
+        probabilities_bg = []
+        for k in bins:
+            probability_bg = background_sfs_2D[k]
+            probabilities_bg.append(probability_bg)
+        # print(probabilities_bg)
+        
+        # normalize probabilities so they can add up to 1
+        total_bg = sum(probabilities_bg)
+        
+        probabilities_bg_norm = []
+        for p in probabilities_bg:
+            p_norm = p/total_bg
+            probabilities_bg_norm.append(p_norm)
+        # print(probabilities_bg)
+        
+        # probs from normalized foreground
+        foreground_sfs_norm = self.normalize_2d_sfs(foreground_sfs_2D)
+        
+        probabilities_fg = []
+        for k in bins:
+            probability_fg = foreground_sfs_norm[k]
+            probabilities_fg.append(probability_fg)
+        # print(probabilities_fg)
+        
+        # normalize probabilities so they can add up to 1
+        total_fg = sum(probabilities_fg)
+        
+        probabilities_fg_norm = []
+        for p in probabilities_fg:
+            p_norm = p/total_fg
+            probabilities_fg_norm.append(p_norm)
+        # print(probabilities_fg)
+        
+        total_sites = sum(observed_counts) # should this exclude the counts in the first and last bin? (sum(observed_counts[1:-1]))
+        # print(total_sites)
+        
+        log_likelihood_bg = multinomial.logpmf(x=observed_counts, n=total_sites, p=probabilities_bg_norm)
+        log_likelihood_fg = multinomial.logpmf(x=observed_counts, n=total_sites, p=probabilities_fg_norm)
+        
+        clr = 2*(log_likelihood_fg - log_likelihood_bg)
+        
+        return clr
+    
+    def T1D_scan(self, data_dict, background_sfs, window_size, pop, pop_size):
+        
+        '''
+        genome scan to calculate T1D
+        
+        arguments: 
+        - data_dict:
+        - background_sfs:
+        - window_size:
+        '''
+        
+        self.data_dict = data_dict
+        self.background_sfs = background_sfs # normalized SFS
+        self.window_size = window_size
+        self.pop = pop
+        self.pop_size = pop_size
+        
+        # sort snps by chromosome and position
+        sorted_snps = []
+        for snp_key in data_dict.keys():
+            coords = snp_key.split('-')
+            chromosome_id = coords[0]
+            position = int(coords[1])
+            sorted_snps.append((chromosome_id, position, snp_key))
+            
+        sorted_snps.sort(key=lambda x: (x[0], x[1]))
+        
+        T1D_windows = {}
+        current_chromosome = None
+        current_window_start = 0
+        window_data = {}
+        
+        # loop over the sorted snps in windows of window_size
+        for chrom, pos, snp_key in sorted_snps:
+            # reset the window start for each new chromosome
+            if chrom != current_chromosome:
+                if window_data:
+                    foreground_sfs = self.calculate_1d_sfs(window_data, pop, pop_size, self.start_position, self.end_position, self.variant_type)
+                    folded_foreground_sfs = self.fold_1d_sfs(foreground_sfs)
+                    T1D = self.calculate_likelihood_1D(folded_foreground_sfs, self.background_sfs)
+                    snp_count = self.count_snps(window_data, self.variant_type)
+                    window_range = f"{current_chromosome} {current_window_start}-{current_window_start + window_size - 1}"
+                    T1D_windows[window_range] = {
+                        "snp_count": snp_count,
+                        "T1D": T1D
+                    }
+
+                # start new chromosome
+                current_chromosome = chrom
+                current_window_start = 1
+                window_data = {}
+            
+            # check if SNP is within the current window
+            if pos < current_window_start + window_size:
+                window_data[snp_key] = data_dict[snp_key]  # add SNP to current window
+            else:
+                # calculate p-values for the current window
+                if window_data:
+                    foreground_sfs = self.calculate_1d_sfs(window_data, pop, pop_size, self.start_position, self.end_position, self.variant_type)
+                    folded_foreground_sfs = self.fold_1d_sfs(foreground_sfs)
+                    T1D = self.calculate_likelihood_1D(folded_foreground_sfs, self.background_sfs)
+                    snp_count = self.count_snps(window_data, self.variant_type)
+                    window_range = f"{current_chromosome} {current_window_start}-{current_window_start + window_size - 1}"
+                    T1D_windows[window_range] = {
+                        "snp_count": snp_count,
+                        "T1D": T1D
+                    }
+
+                # move to the next window, aligned to the window size
+                current_window_start += window_size * ((pos - current_window_start) // window_size)
+                window_data = {snp_key: data_dict[snp_key]}
+
+        # calculate for the last window if it has any data
+        if window_data:
+            foreground_sfs = self.calculate_1d_sfs(window_data, pop, pop_size, self.start_position, self.end_position, self.variant_type)
+            folded_foreground_sfs = self.fold_1d_sfs(foreground_sfs)
+            T1D = self.calculate_likelihood_1D(folded_foreground_sfs, self.background_sfs)
+            snp_count = self.count_snps(window_data, self.variant_type)
+            window_range = f"{current_chromosome} {current_window_start}-{current_window_start + window_size - 1}"
+            T1D_windows[window_range] = {
+                "snp_count": snp_count,
+                "T1D": T1D
+            }
+            
+        return T1D_windows    
+        
 
 def plot_2d_sfs(sfs_dict, sample_size, vmin=None, vmax=None, ax=None,
                  pop_ids=('Pop1', 'Pop2'), colorbar=True, cmap='viridis_r', show=True):
@@ -627,6 +772,69 @@ def plot_2d_sfs(sfs_dict, sample_size, vmin=None, vmax=None, ax=None,
     
     return None
 
+chromosome_ids = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/data_summer2024/scripts/chromosomes.txt"
+
+chr_ids_file = open(chromosome_ids, "r")
+chr_ids = {}
+
+for line in chr_ids_file:
+    columns = line.strip().split("\t")
+    if len(columns) >= 2:
+        chr_ids[columns[0]] = columns[1]
+chr_ids_file.close()
+
+def plot_manhattan(T1D_windows, chr_mapping, title):
+    """
+    Generate a Manhattan plot for likelihood values across the genome.
+    
+    Arguments:
+    - T1D_windows: Dictionary where keys are window ranges (e.g., "NC_087088.1 1000-2000"),
+      and values are dictionaries containing 'T1D' likelihood values.
+    - chr_mapping: Dictionary mapping chromosome accession IDs to numeric values.
+    """
+    
+    # Extract chromosome, position, and likelihood values
+    chroms, positions, likelihoods = [], [], []
+    
+    for window, values in T1D_windows.items():
+        chrom, pos_range = window.split()
+        start_pos = int(pos_range.split('-')[0])
+        
+        if chrom in chr_mapping:
+            chrom_num = chr_mapping[chrom]
+            chroms.append(chrom_num)
+            positions.append(start_pos)
+            likelihoods.append(values['T1D'])
+    
+    # Create DataFrame for plotting
+    df = pd.DataFrame({'chromosome': chroms, 'position': positions, 'likelihood': likelihoods})
+    df['chromosome'] = df['chromosome'].astype('category')
+    df['chromosome'] = df['chromosome'].cat.set_categories(sorted(df['chromosome'].unique(), key=int), ordered=True)
+    df = df.sort_values(['chromosome', 'position'])
+    df['ind'] = range(len(df))
+    
+    # Group by chromosome
+    df_grouped = df.groupby('chromosome')
+    
+    # Create Manhattan plot
+    fig, ax = plt.subplots(figsize=(12, 6))
+    colors = ['darkgreen', 'gold']
+    x_labels = []
+    x_labels_pos = []
+    
+    for i, (name, group) in enumerate(df_grouped):
+        group.plot(kind='scatter', x='ind', y='likelihood', color=colors[i % len(colors)], ax=ax, s=10, alpha=0.7)
+        x_labels.append(name)
+        x_labels_pos.append((group['ind'].iloc[-1] + group['ind'].iloc[0]) / 2)
+    
+    ax.set_xticks(x_labels_pos)
+    ax.set_xticklabels(x_labels)
+    ax.set_xlabel("Chromosome")
+    ax.set_ylabel("CLR")
+    ax.set_title(title)
+    plt.show()
+
+
 ''' chr1 files '''
 chr1_vcf = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/data_summer2024/ECBchr1.vcf.gz"
 popmap = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/data_summer2024/popmap.txt"
@@ -658,6 +866,7 @@ chr1_bv_sfs = inferencePipeline.calculate_1d_sfs(chr1_data_dict, 'bv', 14, start
 chr1_bv_sfs_folded = inferencePipeline.fold_1d_sfs(chr1_bv_sfs)
 chr1_bv_norm = inferencePipeline.normalize_1d_sfs(chr1_bv_sfs_folded)
 
+
 ''' chrZ window with highest FST '''
 chrZ_vcf = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/data_summer2024/ECBchrZ_highestFSTwindow.vcf.gz"
 inference_chrZ = LikelihoodInference_jointSFS(chrZ_vcf, popmap)
@@ -677,32 +886,23 @@ chrZ_bv_norm = inference_chrZ.normalize_1d_sfs(chrZ_bv_sfs_folded)
 chrZ_2d_sfs = inference_chrZ.calculate_2d_sfs(chrZ_dict)
 plot_2d_sfs(chrZ_2d_sfs, (36, 28), pop_ids=('uv', 'bv'))
 
-''' chr2 '''
-chr2_vcf = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/data_summer2024/ECBchr2.vcf.gz"
-inference_chr2 = LikelihoodInference_jointSFS(chr2_vcf, popmap)
-
-chr2_dict = inference_chr2.make_data_dict_vcf()
-
-#uv
-chr2_uv_sfs = inference_chr2.calculate_1d_sfs(chr2_dict, 'uv', 18, start_position=None, end_position=None, variant_type=None)
-chr2_uv_sfs_folded = inference_chr2.fold_1d_sfs(chr2_uv_sfs)
-chr2_uv_norm = inference_chr2.normalize_1d_sfs(chr2_uv_sfs_folded)
-
-#bv
-chr2_bv_sfs = inference_chr2.calculate_1d_sfs(chr2_dict, 'bv', 14, start_position=None, end_position=None, variant_type=None)
-chr2_bv_sfs_folded = inference_chr2.fold_1d_sfs(chr2_bv_sfs)
-chr2_bv_norm = inference_chr2.normalize_1d_sfs(chr2_bv_sfs_folded)
-
-chr2_2d_sfs = inference_chr2.calculate_2d_sfs(chr2_dict)
-plot_2d_sfs(chr2_2d_sfs, (36, 28), pop_ids=('uv', 'bv'))
-
 
 # calculate 1D likelihoods
 chr1_likelihoods = inferencePipeline.calculate_likelihood_1D(chr1_uv_sfs_folded, chr1_uv_norm)
 uv_chr1_chrZ_clr = inferencePipeline.calculate_likelihood_1D(chrZ_uv_sfs_folded, chr1_uv_norm)
 bv_chr1_chrZ_clr = inferencePipeline.calculate_likelihood_1D(chrZ_bv_sfs_folded, chr1_bv_norm)
 
-uv_chr1_chr2_clr = inferencePipeline.calculate_likelihood_1D(chr2_uv_sfs_folded, chr1_uv_norm)
-bv_chr1_chr2_clr = inferencePipeline.calculate_likelihood_1D(chr2_bv_sfs_folded, chr1_bv_norm)
+# calculate 2D likelihoods conditional on 1D
+chr1_chrZ_T2D = inferencePipeline.calculate_likelihood_2D(chrZ_2d_sfs, chr1_2d_sfs, chrZ_uv_sfs_folded, chr1_uv_norm)
 
+''' plot 1D likelihoods '''
 
+# load compressed data
+with bz2.BZ2File('../data_summer2024/likelihood_scan/genome_data.pkl.bz2', 'rb') as file:
+    ECB_wg_dict = pickle.load(file)
+
+ECB_uv_T1D = inferencePipeline.T1D_scan(ECB_wg_dict, chr1_uv_norm, 500000, "uv", 18)
+plot_manhattan(ECB_uv_T1D, chr_ids, "univoltine - 500kb windows")
+
+ECB_bv_T1D = inferencePipeline.T1D_scan(ECB_wg_dict, chr1_bv_norm, 100000, "bv", 14)
+plot_manhattan(ECB_bv_T1D, chr_ids, "bivoltine - 100kb windows")
