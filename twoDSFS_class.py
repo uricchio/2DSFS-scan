@@ -136,7 +136,6 @@ class LikelihoodInference_jointSFS:
         
         return data_dict
 
-
     def calculate_2d_sfs(self, data_dict):
         """
         calculate the two-dimensional sfs 
@@ -257,6 +256,7 @@ class LikelihoodInference_jointSFS:
         # sum all the sites
         counts = list(self.sfs.values())
         total = sum(counts[1:-1]) # exclude first and last bin 
+        # print(total)
         
         # divide each bin value by the total number of sites
         normalized_sfs = {}
@@ -493,26 +493,6 @@ class LikelihoodInference_jointSFS:
             
         return normalized_sfs
     
-    def fold_2d_sfs(self, sfs_dict, pop1_size, pop2_size):
-        num_chromosomes_pop1 = pop1_size * 2
-        num_chromosomes_pop2 = pop2_size * 2
-    
-        folded_sfs_dict = {}
-    
-        for (freq_pop1, freq_pop2), count in sfs_dict.items():
-            maf_pop1 = min(freq_pop1, num_chromosomes_pop1 - freq_pop1) # freq of alt, freq of ref (# chr - freq of alt)
-            maf_pop2 = min(freq_pop2, num_chromosomes_pop2 - freq_pop2)
-            
-            key = (maf_pop1, maf_pop2)
-            
-            # initialize if key does not exist
-            if key not in folded_sfs_dict:
-                folded_sfs_dict[key] = 0
-                
-            folded_sfs_dict[key] += count
-        
-        return folded_sfs_dict
-    
     def calculate_likelihood_1D(self, foreground_sfs, background_sfs): 
         
         self.foreground_sfs = foreground_sfs
@@ -521,14 +501,14 @@ class LikelihoodInference_jointSFS:
         bins = sorted(foreground_sfs.keys())
         
         observed_counts = []
-        for k in bins:
+        for k in bins[1:-1]:
             count = foreground_sfs[k]
             observed_counts.append(int(count))
         # print(observed_counts)
         
         # probs from background
         probabilities_bg = []
-        for k in bins:
+        for k in bins[1:-1]:
             probability_bg = background_sfs[k]
             probabilities_bg.append(probability_bg)
         # print(probabilities_bg)
@@ -546,7 +526,7 @@ class LikelihoodInference_jointSFS:
         foreground_sfs_norm = self.normalize_1d_sfs(foreground_sfs)
         
         probabilities_fg = []
-        for k in bins:
+        for k in bins[1:-1]:
             probability_fg = foreground_sfs_norm[k]
             probabilities_fg.append(probability_fg)
         # print(probabilities_fg)
@@ -568,73 +548,7 @@ class LikelihoodInference_jointSFS:
         
         clr = 2*(log_likelihood_fg - log_likelihood_bg)
         
-        # print("Observed Counts (x):", observed_counts)
-        # print("Sum of Observed Counts (n):", total_sites)
-        # print("Background Probabilities (p_bg):", probabilities_bg_norm, "Sum:", sum(probabilities_bg_norm))
-        # print("Foreground Probabilities (p_fg):", probabilities_fg_norm, "Sum:", sum(probabilities_fg_norm))
-        # print(log_likelihood_bg)
-        # print(log_likelihood_fg)
-        # print(clr)
-        
-        return clr
-    
-    def calculate_likelihood_2D(self, foreground_sfs_2D, background_sfs_2D):
-        
-        self.foreground_sfs_2D = foreground_sfs_2D
-        self.background_sfs_2D = background_sfs_2D
-        
-        bins = sorted(foreground_sfs_2D.keys())
-        # print(bins)
-        
-        observed_counts = []
-        for k in bins:
-            count = foreground_sfs_2D[k]
-            observed_counts.append(int(count))
-        # print(observed_counts)
-        
-        # probs from background
-        probabilities_bg = []
-        for k in bins:
-            probability_bg = background_sfs_2D[k]
-            probabilities_bg.append(probability_bg)
-        # print(probabilities_bg)
-        
-        # normalize probabilities so they can add up to 1
-        total_bg = sum(probabilities_bg)
-        
-        probabilities_bg_norm = []
-        for p in probabilities_bg:
-            p_norm = p/total_bg
-            probabilities_bg_norm.append(p_norm)
-        # print(probabilities_bg)
-        
-        # probs from normalized foreground
-        foreground_sfs_norm = self.normalize_2d_sfs(foreground_sfs_2D)
-        
-        probabilities_fg = []
-        for k in bins:
-            probability_fg = foreground_sfs_norm[k]
-            probabilities_fg.append(probability_fg)
-        # print(probabilities_fg)
-        
-        # normalize probabilities so they can add up to 1
-        total_fg = sum(probabilities_fg)
-        
-        probabilities_fg_norm = []
-        for p in probabilities_fg:
-            p_norm = p/total_fg
-            probabilities_fg_norm.append(p_norm)
-        # print(probabilities_fg)
-        
-        total_sites = sum(observed_counts) # should this exclude the counts in the first and last bin? (sum(observed_counts[1:-1]))
-        # print(total_sites)
-        
-        log_likelihood_bg = multinomial.logpmf(x=observed_counts, n=total_sites, p=probabilities_bg_norm)
-        log_likelihood_fg = multinomial.logpmf(x=observed_counts, n=total_sites, p=probabilities_fg_norm)
-        
-        clr = 2*(log_likelihood_fg - log_likelihood_bg)
-        
-        return clr
+        return clr 
     
     def T1D_scan(self, data_dict, background_sfs, window_size, pop, pop_size):
         
@@ -720,8 +634,155 @@ class LikelihoodInference_jointSFS:
                 "T1D": T1D
             }
             
-        return T1D_windows    
+        return T1D_windows 
+    
+    def calculate_likelihood_2D(self, foreground_2d_sfs, background_2d_sfs):
         
+        self.foreground_2d_sfs = foreground_2d_sfs
+        self.background_2d_sfs = background_2d_sfs
+        
+        bins = sorted(foreground_2d_sfs.keys())
+        # print(bins)
+        
+        observed_counts = []
+        for k in bins[1:-1]:
+            count = foreground_2d_sfs[k]
+            observed_counts.append(int(count))
+        # print(observed_counts)
+        
+        # probs from background
+        probabilities_bg = []
+        for k in bins[1:-1]:
+            probability_bg = background_2d_sfs[k]
+            probabilities_bg.append(probability_bg)
+        # print(probabilities_bg)
+        
+        # normalize probabilities so they can add up to 1
+        total_bg = sum(probabilities_bg)
+        
+        probabilities_bg_norm = []
+        for p in probabilities_bg:
+            p_norm = p/total_bg
+            probabilities_bg_norm.append(p_norm)
+        # print(probabilities_bg)
+        
+        # probs from normalized foreground
+        foreground_sfs_norm = self.normalize_2d_sfs(foreground_2d_sfs)
+        
+        probabilities_fg = []
+        for k in bins[1:-1]:
+            probability_fg = foreground_sfs_norm[k]
+            probabilities_fg.append(probability_fg)
+        # print(probabilities_fg)
+        
+        # normalize probabilities so they can add up to 1
+        total_fg = sum(probabilities_fg)
+        
+        probabilities_fg_norm = []
+        for p in probabilities_fg:
+            p_norm = p/total_fg
+            probabilities_fg_norm.append(p_norm)
+        # print(probabilities_fg)
+        
+        total_sites = sum(observed_counts) # should this exclude the counts in the first and last bin? (sum(observed_counts[1:-1]))
+        # print(total_sites)
+        
+        log_likelihood_bg = multinomial.logpmf(x=observed_counts, n=total_sites, p=probabilities_bg_norm)
+        log_likelihood_fg = multinomial.logpmf(x=observed_counts, n=total_sites, p=probabilities_fg_norm)
+        
+        clr = 2*(log_likelihood_fg - log_likelihood_bg)
+        
+        return clr           
+    
+    def T2D_scan(self, data_dict, background_2d_sfs, window_size):
+        
+        '''
+        genome scan to calculate T1D
+        
+        arguments: 
+        - data_dict:
+        - background_sfs:
+        - window_size:
+        '''
+        
+        self.data_dict = data_dict
+        self.background_2d_sfs = background_2d_sfs # normalized SFS
+        self.window_size = window_size
+        
+        # sort snps by chromosome and position
+        sorted_snps = []
+        for snp_key in data_dict.keys():
+            coords = snp_key.split('-')
+            chromosome_id = coords[0]
+            position = int(coords[1])
+            sorted_snps.append((chromosome_id, position, snp_key))
+            
+        sorted_snps.sort(key=lambda x: (x[0], x[1]))
+        
+        T2D_windows = {}
+        current_chromosome = None
+        current_window_start = 0
+        window_data = {}
+        
+        # loop over the sorted snps in windows of window_size
+        for chrom, pos, snp_key in sorted_snps:
+            # reset the window start for each new chromosome
+            if chrom != current_chromosome:
+                if window_data:
+                    foreground_2d_sfs = self.calculate_2d_sfs(window_data)
+                    T2D = self.calculate_likelihood_2D(foreground_2d_sfs, self.background_2d_sfs)
+                    snp_count = self.count_snps(window_data, self.variant_type)
+                    window_range = f"{current_chromosome} {current_window_start}-{current_window_start + window_size - 1}"
+                    T2D_windows[window_range] = {
+                        "snp_count": snp_count,
+                        "T2D": T2D
+                    }
+
+                # start new chromosome
+                current_chromosome = chrom
+                current_window_start = 1
+                window_data = {}
+            
+            # check if SNP is within the current window
+            if pos < current_window_start + window_size:
+                window_data[snp_key] = data_dict[snp_key]  # add SNP to current window
+            else:
+                # calculate p-values for the current window
+                if window_data:
+                    foreground_2d_sfs = self.calculate_2d_sfs(window_data)
+                    T2D = self.calculate_likelihood_2D(foreground_2d_sfs, self.background_2d_sfs)
+                    snp_count = self.count_snps(window_data, self.variant_type)
+                    window_range = f"{current_chromosome} {current_window_start}-{current_window_start + window_size - 1}"
+                    T2D_windows[window_range] = {
+                        "snp_count": snp_count,
+                        "T2D": T2D
+                    }
+
+                # move to the next window, aligned to the window size
+                current_window_start += window_size * ((pos - current_window_start) // window_size)
+                window_data = {snp_key: data_dict[snp_key]}
+
+        # calculate for the last window if it has any data
+        if window_data:
+            foreground_2d_sfs = self.calculate_2d_sfs(window_data)
+            T2D = self.calculate_likelihood_2D(foreground_2d_sfs, self.background_2d_sfs)
+            snp_count = self.count_snps(window_data, self.variant_type)
+            window_range = f"{current_chromosome} {current_window_start}-{current_window_start + window_size - 1}"
+            T2D_windows[window_range] = {
+                "snp_count": snp_count,
+                "T2D": T2D
+            }
+            
+        return T2D_windows  
+    
+    def new_term(self, T1D, T2D):
+        self.T1D = T1D
+        self.T2D = T2D
+        
+        jointsfs_contribution = T2D - T1D
+        
+        return jointsfs_contribution
+    
 
 def plot_2d_sfs(sfs_dict, sample_size, vmin=None, vmax=None, ax=None,
                  pop_ids=('Pop1', 'Pop2'), colorbar=True, cmap='viridis_r', show=True):
@@ -804,7 +865,7 @@ def plot_manhattan(T1D_windows, chr_mapping, title):
             chrom_num = chr_mapping[chrom]
             chroms.append(chrom_num)
             positions.append(start_pos)
-            likelihoods.append(values['T1D'])
+            likelihoods.append(values['T2D'])
     
     # Create DataFrame for plotting
     df = pd.DataFrame({'chromosome': chroms, 'position': positions, 'likelihood': likelihoods})
@@ -856,6 +917,9 @@ with bz2.BZ2File('chr1.pkl.bz2', 'rb') as file:
 chr1_2d_sfs = inferencePipeline.calculate_2d_sfs(chr1_data_dict)
 plot_2d_sfs(chr1_2d_sfs, (36, 28), pop_ids=('uv', 'bv'))
 
+chr1_2d_sfs_norm = inferencePipeline.normalize_2d_sfs(chr1_2d_sfs)
+
+
 # uv
 chr1_uv_sfs = inferencePipeline.calculate_1d_sfs(chr1_data_dict, 'uv', 18, start_position=None, end_position=None, variant_type=None)
 chr1_uv_sfs_folded = inferencePipeline.fold_1d_sfs(chr1_uv_sfs)
@@ -902,7 +966,13 @@ with bz2.BZ2File('../data_summer2024/likelihood_scan/genome_data.pkl.bz2', 'rb')
     ECB_wg_dict = pickle.load(file)
 
 ECB_uv_T1D = inferencePipeline.T1D_scan(ECB_wg_dict, chr1_uv_norm, 500000, "uv", 18)
-plot_manhattan(ECB_uv_T1D, chr_ids, "univoltine - 500kb windows")
+plot_manhattan(ECB_uv_T1D, chr_ids, "univoltine - 500kb windows - excluding fixed sites")
 
-ECB_bv_T1D = inferencePipeline.T1D_scan(ECB_wg_dict, chr1_bv_norm, 100000, "bv", 14)
-plot_manhattan(ECB_bv_T1D, chr_ids, "bivoltine - 100kb windows")
+ECB_bv_T1D = inferencePipeline.T1D_scan(ECB_wg_dict, chr1_bv_norm, 500000, "bv", 14)
+plot_manhattan(ECB_bv_T1D, chr_ids, "bivoltine - 500kb windows - excluding fixed sites")
+
+uv_chr1_chrZ_T2D = inferencePipeline.calculate_likelihood_2D(chrZ_2d_sfs, chr1_2d_sfs_norm)
+
+ECB_T2D = inferencePipeline.T2D_scan(ECB_wg_dict, chr1_2d_sfs_norm, 100000)
+plot_manhattan(ECB_T2D, chr_ids, "T2D - 100kb windows - excluding fixed sites")
+
