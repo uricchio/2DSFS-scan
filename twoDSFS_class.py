@@ -238,14 +238,14 @@ class LikelihoodInference_jointSFS:
             total_sites += 1
             
         # add pseudo-counts to all bins (1/total_sites)
-        pseudo_count = 0
-        if total_sites > 0:
-            pseudo_count = 1 / total_sites
-        else:
-            0
+        # pseudo_count = 0
+        # if total_sites > 0:
+        #     pseudo_count = 1 / total_sites
+        # else:
+        #     0
         
-        for key in sfs_dict.keys():
-            sfs_dict[key] += pseudo_count
+        # for key in sfs_dict.keys():
+        #     sfs_dict[key] += pseudo_count
 
         return sfs_dict    
     
@@ -797,6 +797,8 @@ class LikelihoodInference_jointSFS:
     
     def combined_scan(self, data_dict, window_size):
         
+        ''' uses each chromosome as its own background '''
+        
         self.data_dict = data_dict
         self.window_size = window_size
         
@@ -1272,49 +1274,292 @@ class LikelihoodInference_jointSFS:
                     search_strings.add(parts[1])
         return search_strings
     
-    def scan_sims(self, main_dir):
+    # def scan_sims(self, main_dir):
         
-        # define pop map file
-        popinfo_filename = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/simulations/results/popmap_sims_copy.txt"
+    #     # define pop map file
+    #     popinfo_filename = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/simulations/results/popmap_sims_copy.txt"
 
-        # get generation IDs
-        generations = self.get_gens(main_dir)
+    #     # get generation IDs
+    #     generations = self.get_gens(main_dir)
         
-        results = {}
+    #     results = {}
         
-        # get list of target vcfs and concatenated vcf files
-        for generation in generations:
-            target_vcfs = glob.glob(f"{main_dir}/iter*/*{generation}*.vcf.gz")
-            concatenated_vcfs = glob.glob(f"{main_dir}/concatenated_vcfs/gen.{generation}.concatenated.vcf.gz")
+    #     # get list of target vcfs and concatenated vcf files
+    #     for generation in generations:
+    #         target_vcfs = glob.glob(f"{main_dir}/iter*/*{generation}*.vcf.gz")
+    #         concatenated_vcfs = glob.glob(f"{main_dir}/concatenated_vcfs/gen.{generation}.concatenated.vcf.gz")
             
-            # get background sfs from concatenated vcfs
-            for vcf in concatenated_vcfs:
-                data_dict = self.make_data_dict_vcf(vcf, popinfo_filename, snp_type=None)
-                background_sfs = self.calculate_2d_sfs(data_dict, 'p1', 'p2', start_position=0, end_position=500000)
-                normalized_background_sfs = self.normalize_2d_sfs(background_sfs)
+    #         # get background sfs from concatenated vcfs
+    #         for vcf in concatenated_vcfs:
+    #             data_dict = self.make_data_dict_vcf(vcf, popinfo_filename, snp_type=None)
+    #             background_sfs = self.calculate_2d_sfs(data_dict, 'p1', 'p2', start_position=0, end_position=500000)
+    #             normalized_background_sfs = self.normalize_2d_sfs(background_sfs)
                 
-                for vcf_input in target_vcfs:
-                    data_dict_target = self.make_data_dict_vcf(vcf_input, popinfo_filename, snp_type=None)
-                    p_values_sims = calculate_p_window(data_dict_target, normalized_background_sfs, 500000, 'p1', 'p2', start_position=None, end_position=None)
-                    # print(p_values_sims)
+    #             for vcf_input in target_vcfs:
+    #                 data_dict_target = self.make_data_dict_vcf(vcf_input, popinfo_filename, snp_type=None)
+    #                 p_values_sims = calculate_p_window(data_dict_target, normalized_background_sfs, 500000, 'p1', 'p2', start_position=None, end_position=None)
+    #                 # print(p_values_sims)
                     
-                    # extract iteration number from filename
-                    iteration_number = int(vcf_input.split('.')[2])
+    #                 # extract iteration number from filename
+    #                 iteration_number = int(vcf_input.split('.')[2])
                 
-                    for key, value in p_values_sims.items():
-                        # Determine region based on window coordinates
-                        window_start, window_end = key.split('_')[1].split('-')
-                        region = 'background' if int(window_end) <= 1000000 else 'foreground'
+    #                 for key, value in p_values_sims.items():
+    #                     # Determine region based on window coordinates
+    #                     window_start, window_end = key.split('_')[1].split('-')
+    #                     region = 'background' if int(window_end) <= 1000000 else 'foreground'
         
-                        writer.writerow({
-                            'generation': generation,
-                            'iteration': iteration_number,
-                            'region': region,
-                            'window_coords': key,
-                            'likelihood': value
-                        })
-        
-        
+    #                     writer.writerow({
+    #                         'generation': generation,
+    #                         'iteration': iteration_number,
+    #                         'region': region,
+    #                         'window_coords': key,
+    #                         'likelihood': value
+    #                     })
+    
+    ''' Genome scan based on number of snps per window, instead of a fixed size'''
+    
+    def scan_chooseChr_bySNPs(self, data_dict, snp_window_size, background_chromosome):
+        """
+        genome scan to calculate T2D, T1D for two populations, and new terms (T2D - T1D) for each population
+        uses a specified chromosome as the background for all calculations
+        only windows with exactly `snp_window_size` SNPs are processed
+    
+        arguments: 
+        - data_dict: Dictionary containing snp data.
+        - snp_window_size: Number of snps per window.
+        - background_chromosome: Chromosome to use as the background for SFS calculations.
+        """
+    
+        self.data_dict = data_dict
+        self.snp_window_size = snp_window_size
+    
+        snps_by_chr = {}
+        for snp_key in data_dict.keys():
+            coords = snp_key.split('-')
+            chromosome_id = coords[0]
+            if chromosome_id not in snps_by_chr:
+                snps_by_chr[chromosome_id] = {}
+            snps_by_chr[chromosome_id][snp_key] = data_dict[snp_key]
+    
+        # check if the specified background chromosome exists in the data
+        if background_chromosome not in snps_by_chr:
+            raise ValueError(f"Background chromosome {background_chromosome} not found in the data.")
+    
+        # calculate background SFS for the specified chromosome
+        bg_snp_data = snps_by_chr[background_chromosome]
+    
+        # calculate and normalize background SFS
+        bg_2d_sfs = self.normalize_2d_sfs(self.calculate_2d_sfs(bg_snp_data))
+        bg_1d_sfs_pop1 = self.normalize_1d_sfs(self.fold_1d_sfs(self.calculate_1d_sfs(bg_snp_data, self.pop1, self.pop1_size, self.start_position, self.end_position, self.variant_type)))
+        bg_1d_sfs_pop2 = self.normalize_1d_sfs(self.fold_1d_sfs(self.calculate_1d_sfs(bg_snp_data, self.pop2, self.pop2_size, self.start_position, self.end_position, self.variant_type)))
+    
+        # sort SNPs by chromosome and position
+        sorted_snps = sorted(data_dict.keys(), key=lambda x: (x.split('-')[0], int(x.split('-')[1])))
+    
+        results = {}
+        current_window = []
+        current_chromosome = None
+        start_position = None
+    
+        def process_window(window_snps, chromosome, start_pos, end_pos):
+            """
+            helper function to process a window of snps and calculate statistics
+            only processes windows with exactly `snp_window_size` snps
+            """
+            # skip processing if the window does not have the required number of snps
+            if len(window_snps) != snp_window_size:
+                print(f"Warning: Skipping incomplete window {chromosome} {start_pos}-{end_pos} with {len(window_snps)} SNPs (expected {snp_window_size}).")
+                return
+    
+            window_data = {}
+    
+            # track missing SNPs for debugging
+            missing_snps = []
+    
+            # iterate over each SNP in the list of snps for the current window
+            for snp in window_snps:
+                if snp in data_dict:
+                    window_data[snp] = data_dict[snp]
+                else:
+                    # if the snp is missing, add it to missing_snps 
+                    missing_snps.append(snp)
+    
+            if missing_snps:
+                print(f"Warning: The following SNPs are missing from data_dict: {missing_snps}")
+    
+            # calculate the 2D SFS for the window
+            fg_2d_sfs = self.calculate_2d_sfs(window_data)
+    
+            # check if the 2D SFS is valid (non-zero sum)
+            if fg_2d_sfs and sum(fg_2d_sfs.values()) != 0:
+                T2D = self.calculate_likelihood_2D(fg_2d_sfs, bg_2d_sfs)
+    
+                fg_sfs_pop1 = self.fold_1d_sfs(self.calculate_1d_sfs(window_data, self.pop1, self.pop1_size, self.start_position, self.end_position, self.variant_type))
+                T1D_pop1 = self.calculate_likelihood_1D(fg_sfs_pop1, bg_1d_sfs_pop1)
+    
+                fg_sfs_pop2 = self.fold_1d_sfs(self.calculate_1d_sfs(window_data, self.pop2, self.pop2_size, self.start_position, self.end_position, self.variant_type))
+                T1D_pop2 = self.calculate_likelihood_1D(fg_sfs_pop2, bg_1d_sfs_pop2)
+    
+                results[f"{chromosome} {start_pos}-{end_pos}"] = {
+                    "snp_count": len(window_snps),
+                    "T2D": T2D,
+                    "T1D_pop1": T1D_pop1,
+                    "T1D_pop2": T1D_pop2,
+                    "new_term_pop1": T2D - T1D_pop1,
+                    "new_term_pop2": T2D - T1D_pop2
+                }
+    
+        for snp_key in sorted_snps:
+            chrom, pos = snp_key.split('-')
+            pos = int(pos)
+    
+            if chrom != current_chromosome:
+                # process the previous chromosome's SNPs before switching
+                if current_window:
+                    process_window(current_window, current_chromosome, start_position, pos)
+    
+                # start new chromosome
+                current_chromosome = chrom
+                current_window = []
+                start_position = pos
+    
+            current_window.append(snp_key)
+    
+            # process window if it reaches the SNP limit
+            if len(current_window) == snp_window_size:
+                process_window(current_window, current_chromosome, start_position, pos)
+                current_window = []
+                start_position = pos + 1  # start next window from next snp position
+    
+        # skip the last window of each chromosome if it doesn't have exactly `snp_window_size` snps
+        if current_window and len(current_window) != snp_window_size:
+            print(f"Warning: Skipping incomplete final window {current_chromosome} {start_position}-{pos} with {len(current_window)} snps (expected {snp_window_size}).")
+    
+        return results
+    
+    def scan_perChr_bySNPs(self, data_dict, snp_window_size):
+        """
+        genome scan to calculate T2D, T1D for two populations, and new terms (T2D - T1D) for each population
+        uses each chromosome as its own background. Windows are defined by a fixed number of snps
+    
+        arguments:
+        - data_dict: Dictionary containing snp data
+        - snp_window_size: Number of snps per window
+        """
+    
+        self.data_dict = data_dict
+        self.num_snps = snp_window_size
+    
+        # Precompute background SFS for each chromosome
+        bg_2d_sfs_per_chr = {}
+        bg_1d_sfs_pop1_per_chr = {}
+        bg_1d_sfs_pop2_per_chr = {}
+    
+        # Group SNPs by chromosome
+        snps_by_chr = {}
+        for snp_key in data_dict.keys():
+            coords = snp_key.split('-')
+            chromosome_id = coords[0]
+            if chromosome_id not in snps_by_chr:
+                snps_by_chr[chromosome_id] = {}
+            snps_by_chr[chromosome_id][snp_key] = data_dict[snp_key]
+    
+        # Calculate background SFS for each chromosome
+        for chrom, snp_data in snps_by_chr.items():
+            # Calculate background 2D SFS
+            bg_2d_sfs = self.calculate_2d_sfs(snp_data)
+            bg_2d_sfs_per_chr[chrom] = self.normalize_2d_sfs(bg_2d_sfs)
+    
+            # Calculate background 1D SFS for pop1, fold it, and normalize it
+            bg_1d_sfs_pop1 = self.calculate_1d_sfs(snp_data, self.pop1, self.pop1_size, self.start_position, self.end_position, self.variant_type)
+            bg_1d_sfs_pop1 = self.fold_1d_sfs(bg_1d_sfs_pop1)
+            bg_1d_sfs_pop1_per_chr[chrom] = self.normalize_1d_sfs(bg_1d_sfs_pop1)
+    
+            # Calculate background 1D SFS for pop2, fold it, and normalize it
+            bg_1d_sfs_pop2 = self.calculate_1d_sfs(snp_data, self.pop2, self.pop2_size, self.start_position, self.end_position, self.variant_type)
+            bg_1d_sfs_pop2 = self.fold_1d_sfs(bg_1d_sfs_pop2)
+            bg_1d_sfs_pop2_per_chr[chrom] = self.normalize_1d_sfs(bg_1d_sfs_pop2)
+    
+        # Sort SNPs by chromosome and position
+        sorted_snps = sorted(data_dict.keys(), key=lambda x: (x.split('-')[0], int(x.split('-')[1])))
+    
+        results = {}
+        current_chromosome = None
+        current_window = []
+        start_position = None
+    
+        def process_window(window_snps, chromosome, start_pos, end_pos):
+            """
+            helper function to process a window of SNPs and calculate statistics.
+            """
+            
+            # skip processing if the window does not have the required number of snps
+            if len(window_snps) != snp_window_size:
+                print(f"Warning: Skipping incomplete window {chromosome} {start_pos}-{end_pos} with {len(window_snps)} SNPs (expected {snp_window_size}).")
+                return
+            
+            window_data = {}
+    
+            # track missing SNPs for debugging
+            missing_snps = []
+    
+            for snp in window_snps:
+                if snp in data_dict:
+                    window_data[snp] = data_dict[snp]
+                else:
+                    missing_snps.append(snp)
+    
+            # print a warning if any SNPs are missing
+            if missing_snps:
+                print(f"Warning: The following snps are missing from data_dict: {missing_snps}")
+                
+            fg_2d_sfs = self.calculate_2d_sfs(window_data)
+            if fg_2d_sfs and sum(fg_2d_sfs.values()) != 0:  # check if the sum is not zero
+                T2D = self.calculate_likelihood_2D(fg_2d_sfs, bg_2d_sfs_per_chr[chromosome])
+    
+                fg_sfs_pop1 = self.fold_1d_sfs(self.calculate_1d_sfs(window_data, self.pop1, self.pop1_size, self.start_position, self.end_position, self.variant_type))
+                T1D_pop1 = self.calculate_likelihood_1D(fg_sfs_pop1, bg_1d_sfs_pop1_per_chr[chromosome])
+    
+                fg_sfs_pop2 = self.fold_1d_sfs(self.calculate_1d_sfs(window_data, self.pop2, self.pop2_size, self.start_position, self.end_position, self.variant_type))
+                T1D_pop2 = self.calculate_likelihood_1D(fg_sfs_pop2, bg_1d_sfs_pop2_per_chr[chromosome])
+    
+                results[f"{chromosome} {start_pos}-{end_pos}"] = {
+                    "snp_count": len(window_snps),
+                    "T2D": T2D,
+                    "T1D_pop1": T1D_pop1,
+                    "T1D_pop2": T1D_pop2,
+                    "new_term_pop1": T2D - T1D_pop1,
+                    "new_term_pop2": T2D - T1D_pop2
+                }
+    
+        for snp_key in sorted_snps:
+            chrom, pos = snp_key.split('-')
+            pos = int(pos)
+    
+            if chrom != current_chromosome:
+                # Process the previous chromosome's SNPs before switching
+                if current_window:
+                    process_window(current_window, current_chromosome, start_position, pos)
+    
+                # Start a new chromosome
+                current_chromosome = chrom
+                current_window = []
+                start_position = pos
+    
+            current_window.append(snp_key)
+    
+            # Process window if it reaches the SNP limit
+            if len(current_window) == snp_window_size:
+                process_window(current_window, current_chromosome, start_position, pos)
+                current_window = []
+                start_position = pos + 1  # Start next window from next SNP position
+    
+        # skip the last window of each chromosome if it doesn't have exactly `snp_window_size` snps
+        if current_window and len(current_window) != snp_window_size:
+            print(f"Warning: Skipping incomplete final window {current_chromosome} {start_position}-{pos} with {len(current_window)} snps (expected {snp_window_size}).")
+    
+        return results
+
     
 
 def plot_2d_sfs(sfs_dict, sample_size, vmin=None, vmax=None, ax=None,
@@ -1461,79 +1706,16 @@ def plot_manhattan(T1D_windows, chr_mapping, stat, title, threshold=None, ylim=N
 chr1_vcf = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/data_summer2024/ECBchr1.vcf.gz"
 popmap = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/data_summer2024/popmap.txt"
 
-
+# call method
 inferencePipeline = LikelihoodInference_jointSFS(chr1_vcf, popmap)
 
-chr1_data_dict = inferencePipeline.make_data_dict_vcf()
+''' plot CLRs '''
 
-#store chr1 SNP dictionary
-# with bz2.BZ2File('chr1.pkl.bz2', 'wb') as file:
-#     pickle.dump(chr1_data_dict, file)
+# load ECB dictionary - change file path
 
-#load chr1 SNP dictionary
-with bz2.BZ2File('chr1.pkl.bz2', 'rb') as file:
-    chr1_data_dict = pickle.load(file)
-
-# calculate folded sfs
-chr1_2d_sfs = inferencePipeline.calculate_2d_sfs(chr1_data_dict)
-plot_2d_sfs(chr1_2d_sfs, (36, 28), pop_ids=('uv', 'bv'))
-
-chr1_2d_sfs_norm = inferencePipeline.normalize_2d_sfs(chr1_2d_sfs)
-
-
-# uv
-chr1_uv_sfs = inferencePipeline.calculate_1d_sfs(chr1_data_dict, 'uv', 18, start_position=None, end_position=None, variant_type=None)
-chr1_uv_sfs_folded = inferencePipeline.fold_1d_sfs(chr1_uv_sfs)
-chr1_uv_norm = inferencePipeline.normalize_1d_sfs(chr1_uv_sfs_folded)
-
-# bv
-chr1_bv_sfs = inferencePipeline.calculate_1d_sfs(chr1_data_dict, 'bv', 14, start_position=None, end_position=None, variant_type=None)
-chr1_bv_sfs_folded = inferencePipeline.fold_1d_sfs(chr1_bv_sfs)
-chr1_bv_norm = inferencePipeline.normalize_1d_sfs(chr1_bv_sfs_folded)
-
-
-''' chrZ window with highest FST '''
-chrZ_vcf = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/data_summer2024/ECBchrZ_highestFSTwindow.vcf.gz"
-inference_chrZ = LikelihoodInference_jointSFS(chrZ_vcf, popmap)
-
-chrZ_dict = inference_chrZ.make_data_dict_vcf()
-
-#uv
-chrZ_uv_sfs = inference_chrZ.calculate_1d_sfs(chrZ_dict, 'uv', 18, start_position=None, end_position=None, variant_type=None)
-chrZ_uv_sfs_folded = inference_chrZ.fold_1d_sfs(chrZ_uv_sfs)
-chrZ_uv_norm = inference_chrZ.normalize_1d_sfs(chrZ_uv_sfs_folded)
-
-#bv
-chrZ_bv_sfs = inference_chrZ.calculate_1d_sfs(chrZ_dict, 'bv', 14, start_position=None, end_position=None, variant_type=None)
-chrZ_bv_sfs_folded = inference_chrZ.fold_1d_sfs(chrZ_bv_sfs)
-chrZ_bv_norm = inference_chrZ.normalize_1d_sfs(chrZ_bv_sfs_folded)
-
-chrZ_2d_sfs = inference_chrZ.calculate_2d_sfs(chrZ_dict)
-plot_2d_sfs(chrZ_2d_sfs, (36, 28), pop_ids=('uv', 'bv'))
-
-
-# calculate 1D likelihoods
-chr1_likelihoods = inferencePipeline.calculate_likelihood_1D(chr1_uv_sfs_folded, chr1_uv_norm)
-uv_chr1_chrZ_clr = inferencePipeline.calculate_likelihood_1D(chrZ_uv_sfs_folded, chr1_uv_norm)
-bv_chr1_chrZ_clr = inferencePipeline.calculate_likelihood_1D(chrZ_bv_sfs_folded, chr1_bv_norm)
-
-# calculate 2D likelihoods conditional on 1D
-chr1_chrZ_T2D = inferencePipeline.calculate_likelihood_2D(chrZ_2d_sfs, chr1_2d_sfs, chrZ_uv_sfs_folded, chr1_uv_norm)
-
-''' plot CLRs - T1D and T2D '''
-
-# load compressed data
 with bz2.BZ2File('../data_summer2024/likelihood_scan/genome_data.pkl.bz2', 'rb') as file:
     ECB_wg_dict = pickle.load(file)
 
-ECB_uv_T1D = inferencePipeline.T1D_scan(ECB_wg_dict, chr1_uv_norm, 500000, "uv", 18)
-plot_manhattan(ECB_uv_T1D, chr_ids, 'T1D', "univoltine - 500kb windows - excluding fixed sites", threshold=5)
-
-ECB_bv_T1D = inferencePipeline.T1D_scan(ECB_wg_dict, chr1_bv_norm, 500000, "bv", 14)
-plot_manhattan(ECB_bv_T1D, chr_ids, 'T1D', "bivoltine - 500kb windows - excluding fixed sites", threshold=5)
-
-ECB_T2D = inferencePipeline.T2D_scan(ECB_wg_dict, chr1_2d_sfs_norm, 100000)
-plot_manhattan(ECB_T2D, chr_ids, 'T2D', "T2D - 100kb windows", threshold=5)
 
 ''' each chromosome as its own background '''
 ECB_stats_500kb = inferencePipeline.combined_scan(ECB_wg_dict, 500000)
@@ -1566,13 +1748,16 @@ plot_manhattan(ECB_bgchr1_100kb, chr_ids, 'new_term_pop1', "univoltine new_term 
 plot_manhattan(ECB_bgchr1_100kb, chr_ids, 'new_term_pop2', "bivoltine new_term - chr1 background - 100kb windows")
 
 ''' use whole genome SFS as background '''
+# get whole genome 2DSFS
 ECB_2d_sfs = inferencePipeline.calculate_2d_sfs(ECB_wg_dict)
 ECB_2d_sfs = inferencePipeline.normalize_2d_sfs(ECB_2d_sfs)
 
+# get UV whole genome 1DSFS
 ECB_uv_sfs = inferencePipeline.calculate_1d_sfs(ECB_wg_dict, 'uv', 18, start_position=None, end_position=None, variant_type=None)
 ECB_uv_sfs = inferencePipeline.fold_1d_sfs(ECB_uv_sfs)
 ECB_uv_sfs = inferencePipeline.normalize_1d_sfs(ECB_uv_sfs)
 
+# get BV whole genome 1DSFS
 ECB_bv_sfs = inferencePipeline.calculate_1d_sfs(ECB_wg_dict, 'bv', 14, start_position=None, end_position=None, variant_type=None)
 ECB_bv_sfs = inferencePipeline.fold_1d_sfs(ECB_bv_sfs)
 ECB_bv_sfs = inferencePipeline.normalize_1d_sfs(ECB_bv_sfs)
@@ -1592,13 +1777,19 @@ plot_manhattan(ECB_bgWG_100kb, chr_ids, 'new_term_pop1', "univoltine new_term - 
 plot_manhattan(ECB_bgWG_100kb, chr_ids, 'new_term_pop2', "bivoltine new_term - whole genome background - 100kb windows")
 
 
+''' genome scan based on number of snps per window '''
+''' chr1 background '''
+ECB_bgchr1_200snps = inferencePipeline.scan_chooseChr_bySNPs(ECB_wg_dict, 200, 'NC_087088.1')
+plot_manhattan(ECB_bgchr1_200snps, chr_ids, 'T1D_pop1', "univoltine T1D - chr1 background - 200 SNPs windows")
+plot_manhattan(ECB_bgchr1_200snps, chr_ids, 'T1D_pop2', "bivoltine T1D - chr1 background - 200 SNPs windows")
+plot_manhattan(ECB_bgchr1_200snps, chr_ids, 'T2D', "T2D - chr1 background - 200 SNPs windows", ylim=(0,2000))
+plot_manhattan(ECB_bgchr1_200snps, chr_ids, 'new_term_pop1', "univoltine new_term - chr1 background - 200 SNPs windows")
+plot_manhattan(ECB_bgchr1_200snps, chr_ids, 'new_term_pop2', "bivoltine new_term - chr1 background - 200 SNPs windows")
 
-
-
-
-
-
-
-
-
-
+''' each chromosome is its own background '''
+ECB_bgWG_1000snps = inferencePipeline.scan_perChr_bySNPs(ECB_wg_dict, 1000)
+plot_manhattan(ECB_bgWG_1000snps, chr_ids, 'T1D_pop1', "univoltine T1D - indep background - 1000 SNPs windows")
+plot_manhattan(ECB_bgWG_1000snps, chr_ids, 'T1D_pop2', "bivoltine T1D - indep background - 1000 SNPs windows")
+plot_manhattan(ECB_bgWG_1000snps, chr_ids, 'T2D', "T2D - indep background - 1000 SNPs windows")
+plot_manhattan(ECB_bgWG_1000snps, chr_ids, 'new_term_pop1', "univoltine new_term - indep background - 1000 SNPs windows")
+plot_manhattan(ECB_bgWG_1000snps, chr_ids, 'new_term_pop2', "bivoltine new_term - indep background - 1000 SNPs windows")
