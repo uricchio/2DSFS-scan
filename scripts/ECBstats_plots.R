@@ -350,3 +350,7 @@ get_correlation_ecb <- function(data, plot_title) {
 
 get_correlation_ecb(fst_clr_20kb, plot_title = '20kb scan')
 get_correlation_ecb(fst_clr_500kb, plot_title = '500kb scan')
+
+#save data frames
+write.csv(fst_clr_500kb,file='/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/2DSFS_scan/data/ECBstats_FST_500kb.csv', row.names=FALSE)
+write.csv(fst_clr_20kb,file='/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/2DSFS_scan/data/ECBstats_FST_20kb.csv', row.names=FALSE)
