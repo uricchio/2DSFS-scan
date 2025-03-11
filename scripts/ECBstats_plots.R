@@ -352,5 +352,8 @@ get_correlation_ecb(fst_clr_20kb, plot_title = '20kb scan')
 get_correlation_ecb(fst_clr_500kb, plot_title = '500kb scan')
 
 #save data frames
+fst_clr_500kb <- fst_clr_500kb %>% rename(FST=avg_wc_fst)
+fst_clr_20kb <- fst_clr_20kb %>% rename(FST=avg_wc_fst)
+
 write.csv(fst_clr_500kb,file='/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/2DSFS_scan/data/ECBstats_FST_500kb.csv', row.names=FALSE)
 write.csv(fst_clr_20kb,file='/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/2DSFS_scan/data/ECBstats_FST_20kb.csv', row.names=FALSE)

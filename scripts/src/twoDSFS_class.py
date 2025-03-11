@@ -193,32 +193,7 @@ class LikelihoodInference_jointSFS:
             pop1_calls_list = list(pop1_calls)
             pop2_calls_list = list(pop2_calls)
             
-            # print(pop1_calls_list)            
-
-            # if fold:
-            #     if pos % 2 == 0:
-                    
-            #         if pop1_calls_list[1] > self.pop1_size:      
-            #             oldAlt1 = pop1_calls_list[1]      
-            #             pop1_calls_list[1] = pop1_calls_list[0]
-            #             pop1_calls_list[0] = oldAlt1
-
-            #             oldAlt2 = pop1_calls_list[1]      
-            #             pop2_calls_list[1] = pop2_calls_list[0]            
-            #             pop2_calls_list[0] = oldAlt2      
-
-            #     else:
-            #         if pop2_calls_list[1] > self.pop2_size:
-            #             oldAlt1 = pop1_calls_list[1]
-            #             pop1_calls_list[1] = pop1_calls_list[0]            
-            #             pop1_calls_list[0] = oldAlt1
-
-            #             oldAlt2 = pop1_calls_list[1]
-            #             pop2_calls_list[1] = pop2_calls_list[0]
-            #             pop2_calls_list[0] = oldAlt2      
-
-            # alt_count_pop1 = pop1_calls_list[1]
-            # alt_count_pop2 = pop2_calls_list[1]
+            # fold based on the identity of the MAF for each pop
             
             if self.fold:
                 if pop1_calls_list[1] + pop2_calls_list[1] > self.pop1_size + self.pop2_size: 

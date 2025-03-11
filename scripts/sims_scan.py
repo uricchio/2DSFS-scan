@@ -398,6 +398,7 @@ def calculate_likelihood_1D(foreground_sfs, background_sfs):
 def calculate_likelihood_2D(foreground_2d_sfs, background_2d_sfs):
     
     bins = sorted(foreground_2d_sfs.keys())
+
     
     ''' foreground '''
     # get observed counts from foreground
@@ -691,6 +692,10 @@ def likelihood_scan(main_dir):
 sims_dir = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/simulations/results/vcfs_dadiparams"
 likelihood_scan(sims_dir, "sims_dadiparams_results.csv")
 
+sweep_sims_dir = "/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/simulations/sweep_results/vcfs_lowMigRate"
+likelihood_scan(sweep_sims_dir, "sims_sweepLowMigRate_results.csv")
+
+
 
 def concatenate_fst_files(path):
     
@@ -716,6 +721,7 @@ def concatenate_fst_files(path):
                         out.write(line)
 
 concatenate_fst_files("/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/simulations/results/vcfs_dadiparams")
+concatenate_fst_files(sweep_sims_dir)
 
 # normalize sfs calculated using dadi
 
@@ -770,6 +776,17 @@ normalize_dadi_sfs(T2D_sfs, T2D_norm_sfs)
 gen8000_bg_sfs = '/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/simulations/results/vcfs_dadiparams/sfs_plots/gen8000_background.10.folded.fs'
 gen8000_bg_norm_sfs = '/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/simulations/results/vcfs_dadiparams/sfs_plots/gen8000_background.10.normalized.folded.fs'
 normalize_dadi_sfs(gen8000_bg_sfs, gen8000_bg_norm_sfs)
+
+
+# backgrounds from outlier VCFs
+FST_bg_sfs = '/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/simulations/results/vcfs_dadiparams/sfs_plots/FST_outliers_background.10.folded.fs'
+FST_bg_norm_sfs = '/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/simulations/results/vcfs_dadiparams/sfs_plots/FST_outliers_background.10.normalized.folded.fs'
+normalize_dadi_sfs(FST_bg_sfs, FST_bg_norm_sfs)
+
+T2D_bg_sfs = '/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/simulations/results/vcfs_dadiparams/sfs_plots/T2D_outliers_background.10.folded.fs'
+T2D_bg_norm_sfs = '/Users/marlonalejandrocalderonbalcazar/Desktop/ECB/simulations/results/vcfs_dadiparams/sfs_plots/T2D_outliers_background.10.normalized.folded.fs'
+normalize_dadi_sfs(T2D_bg_sfs, T2D_bg_norm_sfs)
+
 
 
 
@@ -841,6 +858,8 @@ plot_2d_sfs(T2D_outliers_2DSFS_norm, sample_size=(10,10))
 
 plot_2d_sfs(FST_outliers_2DSFS, sample_size=(10,10))
 plot_2d_sfs(T2D_outliers_2DSFS, sample_size=(10,10))
+
+
 
 
 # find residuals
