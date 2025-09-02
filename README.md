@@ -4,3 +4,5 @@ Python scripts for inference of genomic divergence between populations using the
 ## Scripts
 - 'scripts/src/twoDSFS_class.py' has the functions used for inference using empirical data.
 - 'scripts/sims_scan.py' has the functions used for inference using simulated data.
+
+adding a small update LHU
